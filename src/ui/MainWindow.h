@@ -32,6 +32,8 @@ private slots:
     void doFetch();
     void doPull();
     void doPush();
+    void pushPlain();
+    void pushWithUpstream();
     void openStashDialog();
     void openBranchDialog();
     void openCloneDialog();

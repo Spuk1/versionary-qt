@@ -226,6 +226,32 @@ void MainWindow::doPush() {
         return;
     m_headerAction = "pushing";
     setBusy(true);
+    // Check for an upstream first: prompting on the programmatic state is
+    // locale-proof, unlike matching git's (translated) error text.
+    runBackground<bool>(
+        this, [this] { return m_git->currentBranchHasUpstream(); },
+        [&](bool hasUpstream) {
+            if (!hasUpstream) {
+                setBusy(false);
+                if (QMessageBox::question(this, "Set Upstream?",
+                                          "This branch has no upstream. "
+                                          "Create a new remote branch?")
+                    == QMessageBox::Yes) {
+                    pushWithUpstream();
+                }
+                return;
+            }
+            pushPlain();
+        },
+        [&](const QString &e) {
+            setBusy(false);
+            showStatus(e, true);
+        });
+}
+
+void MainWindow::pushPlain() {
+    m_headerAction = "pushing";
+    setBusy(true);
     runBackgroundVoid(
         this, [this] { m_git->push(false); },
         [&] {
@@ -234,30 +260,21 @@ void MainWindow::doPush() {
         },
         [&](const QString &e) {
             setBusy(false);
-            const QString lower = e.toLower();
-            if (lower.contains("has no upstream branch")
-                || lower.contains("no upstream configured for branch")
-                || lower.contains("set the remote as upstream")
-                || lower.contains("use   git   push   --set-upstream")
-                || lower.contains("use git push --set-upstream")) {
-                if (QMessageBox::question(this, "Set Upstream?",
-                                          "This branch has no upstream. Create a new remote branch?")
-                    == QMessageBox::Yes) {
-                    m_headerAction = "pushing";
-                    setBusy(true);
-                    runBackgroundVoid(
-                        this, [this] { m_git->push(true); },
-                        [&] {
-                            setBusy(false);
-                                            refreshHead();
-                        },
-                        [&](const QString &e2) {
-                            setBusy(false);
-                                            showStatus(e2, true);
-                        });
-                    return;
-                }
-            }
+            showStatus(e, true);
+        });
+}
+
+void MainWindow::pushWithUpstream() {
+    m_headerAction = "pushing";
+    setBusy(true);
+    runBackgroundVoid(
+        this, [this] { m_git->push(true); },
+        [&] {
+            setBusy(false);
+            refreshHead();
+        },
+        [&](const QString &e) {
+            setBusy(false);
             showStatus(e, true);
         });
 }

@@ -40,8 +40,11 @@ public:
     QMap<QString, int> branchCommitCounts();
     QString aheadBehind(const QString &branch, const QString &remote = "origin");
     void checkoutRef(const QString &ref);
-    void addBranch(const QString &name, bool checkout);
-    void renameBranch(const QString &oldName, const QString &newName, bool renameRemote);
+    // True when the current branch tracks an upstream branch.
+    // Used to offer "--set-upstream" before pushing instead of parsing
+    // (possibly localized) git error text.
+    bool currentBranchHasUpstream();
+    void addBranch(const QString &name, bool checkout);    void renameBranch(const QString &oldName, const QString &newName, bool renameRemote);
     void deleteBranch(const QString &branch, bool remote, bool deleteRemoteToo = false);
     void mergeBranch(const QString &source, const QString &target);
     void mergeIntoCurrent(const QString &branch);

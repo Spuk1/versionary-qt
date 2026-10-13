@@ -243,6 +243,12 @@ void GitService::checkoutRef(const QString &ref) {
         m_git.run({"submodule", "update", "--init", "--recursive"}, m_repo);
 }
 
+bool GitService::currentBranchHasUpstream() {
+    requireRepo();
+    const GitResult r = m_git.run({"rev-parse", "--verify", "@{u}"}, m_repo);
+    return r.ok();
+}
+
 void GitService::addBranch(const QString &name, bool checkout) {
     if (checkout)
         runOrThrow({"checkout", "-b", name});
