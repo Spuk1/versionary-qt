@@ -1,9 +1,12 @@
 #include "core/AuthStore.h"
 #include "core/GitRunner.h"
+#include "core/IdentityStore.h"
 #include "core/SshStore.h"
 #include "git/GitService.h"
+#include "git/OperationState.h"
 #include "net/ApiClient.h"
 
+#include <QFile>
 #include <QTemporaryDir>
 #include <QtTest/QtTest>
 
@@ -59,6 +62,200 @@ private slots:
             git.run({"branch", "--set-upstream-to=origin/main", "main"}, m_work);
         QVERIFY(r.ok());
         QVERIFY(m_git->currentBranchHasUpstream());
+    }
+
+    void amendAndUndo() {
+        GitRunner git;
+        auto run = [&](const QStringList &args) {
+            const GitResult r = git.run(args, m_work);
+            QVERIFY2(r.ok(), qPrintable(r.stderrText));
+        };
+        run({"checkout", "-qb", "amend-test"});
+        QFile f(m_work + "/amend.txt");
+        QVERIFY(f.open(QIODevice::WriteOnly | QIODevice::Text));
+        f.write("v1\n");
+        f.close();
+        m_git->stageFile("amend.txt");
+        m_git->commit("amend me");
+        m_git->amend("amended message");
+        const QList<CommitInfo> log = m_git->commitLog(0, 5, {}, {}, false);
+        QVERIFY(!log.isEmpty());
+        QCOMPARE(log.first().message, QString("amended message"));
+        m_git->undoLastCommit();
+        QVERIFY(m_git->listStaged().contains("amend.txt"));
+        run({"checkout", "-q", "main"});
+        run({"branch", "-D", "amend-test"});
+    }
+
+    void cherryPickAndRevert() {
+        GitRunner git;
+        auto run = [&](const QStringList &args) {
+            const GitResult r = git.run(args, m_work);
+            QVERIFY2(r.ok(), qPrintable(r.stderrText));
+        };
+        run({"checkout", "-qb", "cp-source", "main"});
+        QFile f(m_work + "/picked.txt");
+        QVERIFY(f.open(QIODevice::WriteOnly | QIODevice::Text));
+        f.write("picked\n");
+        f.close();
+        run({"add", "."});
+        run({"commit", "-m", "pick me"});
+        run({"checkout", "-qb", "cp-target", "main"});
+        const QList<CommitInfo> src = m_git->commitLog(0, 5, "cp-source", {}, false);
+        QVERIFY(!src.isEmpty());
+        m_git->cherryPick(src.first().oid);
+        QVERIFY(QFile::exists(m_work + "/picked.txt"));
+        const QList<CommitInfo> after = m_git->commitLog(0, 3, {}, {}, false);
+        m_git->revertCommit(after.first().oid);
+        QVERIFY(!QFile::exists(m_work + "/picked.txt"));
+        run({"checkout", "-q", "main"});
+        run({"branch", "-D", "cp-source"});
+        run({"branch", "-D", "cp-target"});
+    }
+
+    void conflictFlow() {
+        GitRunner git;
+        auto run = [&](const QStringList &args) {
+            const GitResult r = git.run(args, m_work);
+            QVERIFY2(r.ok(), qPrintable(r.stderrText));
+        };
+        QFile f(m_work + "/clash.txt");
+        QVERIFY(f.open(QIODevice::WriteOnly | QIODevice::Text));
+        f.write("base\n");
+        f.close();
+        run({"add", "."});
+        run({"commit", "-m", "base file"});
+        run({"checkout", "-qb", "clash-a"});
+        QFile fa(m_work + "/clash.txt");
+        QVERIFY(fa.open(QIODevice::WriteOnly | QIODevice::Text | QIODevice::Truncate));
+        fa.write("aaa\n");
+        fa.close();
+        run({"commit", "-am", "side a"});
+        run({"checkout", "-qb", "clash-b", "main"});
+        QFile fb(m_work + "/clash.txt");
+        QVERIFY(fb.open(QIODevice::WriteOnly | QIODevice::Text | QIODevice::Truncate));
+        fb.write("bbb\n");
+        fb.close();
+        run({"commit", "-am", "side b"});
+        bool threw = false;
+        try {
+            m_git->mergeBranch("clash-a", "clash-b");
+        } catch (const GitException &) {
+            threw = true;
+        }
+        QVERIFY(threw);
+        // mergeBranch checks out the target first, so the conflict is live
+        // on clash-b.
+        QCOMPARE(m_git->currentBranch(), QString("clash-b"));
+        OperationState st = m_git->operationState();
+        QVERIFY(st.merging);
+        QCOMPARE(st.actionName(), QString("Merging"));
+        QVERIFY(m_git->conflictedFiles().contains("clash.txt"));
+        m_git->checkoutTheirs("clash.txt");
+        QVERIFY(!m_git->conflictedFiles().contains("clash.txt"));
+        m_git->mergeContinue();
+        QVERIFY(!m_git->operationState().active());
+        QFile check(m_work + "/clash.txt");
+        QVERIFY(check.open(QIODevice::ReadOnly | QIODevice::Text));
+        QCOMPARE(check.readAll().trimmed(), QByteArray("aaa"));
+        run({"checkout", "-q", "main"});
+        run({"branch", "-D", "clash-a"});
+        run({"branch", "-D", "clash-b"});
+    }
+
+    void rebaseAbortRestores() {
+        GitRunner git;
+        auto run = [&](const QStringList &args) {
+            const GitResult r = git.run(args, m_work);
+            QVERIFY2(r.ok(), qPrintable(r.stderrText));
+        };
+        run({"checkout", "-qb", "rb-a"});
+        QFile fa(m_work + "/rb.txt");
+        QVERIFY(fa.open(QIODevice::WriteOnly | QIODevice::Text));
+        fa.write("aaa\n");
+        fa.close();
+        run({"add", "."});
+        run({"commit", "-m", "rb a"});
+        run({"checkout", "-qb", "rb-b", "main"});
+        QFile fb(m_work + "/rb.txt");
+        QVERIFY(fb.open(QIODevice::WriteOnly | QIODevice::Text));
+        fb.write("bbb\n");
+        fb.close();
+        run({"add", "."});
+        run({"commit", "-m", "rb b"});
+        run({"checkout", "-q", "rb-a"});
+        bool threw = false;
+        try {
+            m_git->rebaseOnto("rb-b");
+        } catch (const GitException &) {
+            threw = true;
+        }
+        QVERIFY(threw);
+        QVERIFY(m_git->operationState().rebasing);
+        m_git->rebaseAbort();
+        QVERIFY(!m_git->operationState().active());
+        QCOMPARE(m_git->currentBranch(), QString("rb-a"));
+        run({"checkout", "-q", "main"});
+        run({"branch", "-D", "rb-a"});
+        run({"branch", "-D", "rb-b"});
+    }
+
+    void stashDiffFileLogAndBlame() {
+        QFile f(m_work + "/a.txt");
+        QVERIFY(f.open(QIODevice::Append | QIODevice::Text));
+        f.write("stashline\n");
+        f.close();
+        m_git->stashPush("test stash", {"a.txt"});
+        const QString diff = m_git->stashDiff("stash@{0}");
+        QVERIFY(diff.contains("+stashline"));
+        m_git->popStash("stash@{0}");
+        const QList<CommitInfo> log = m_git->fileLog("a.txt", 10);
+        QVERIFY(!log.isEmpty());
+        const QList<BlameLine> blame = m_git->blame("a.txt");
+        QVERIFY(!blame.isEmpty());
+        QCOMPARE(blame.first().lineNo, 1);
+        QVERIFY(!blame.first().commit.isEmpty());
+        QVERIFY(!blame.first().author.isEmpty());
+    }
+
+    void repoScopedIdentity() {
+        IdentityStore ident;
+        QString error;
+        QVERIFY(ident.save("Repo User", "repo@example.com", &error, m_work));
+        const IdentityStore::Identity id = ident.load(m_work);
+        QCOMPARE(id.name, QString("Repo User"));
+        QCOMPARE(id.email, QString("repo@example.com"));
+    }
+
+    void submoduleFlow() {
+        GitRunner git;
+        auto run = [&](const QString &cwd, const QStringList &args) {
+            const GitResult r = git.run(args, cwd);
+            QVERIFY2(r.ok(), qPrintable(cwd + ": " + r.stderrText));
+        };
+        const QString subSrc = m_tmp->path() + "/subsrc";
+        QDir().mkpath(subSrc);
+        run(subSrc, {"init", "-b", "main", "."});
+        run(subSrc, {"config", "user.name", "T"});
+        run(subSrc, {"config", "user.email", "t@t.t"});
+        QFile sf(subSrc + "/lib.txt");
+        QVERIFY(sf.open(QIODevice::WriteOnly | QIODevice::Text));
+        sf.write("v1\n");
+        sf.close();
+        run(subSrc, {"add", "."});
+        run(subSrc, {"commit", "-m", "sub init"});
+        run(m_work, {"config", "protocol.file.allow", "always"});
+        run(m_work, {"-c", "protocol.file.allow=always", "submodule", "add", subSrc,
+                     "vendor/lib"});
+        run(m_work, {"commit", "-m", "add submodule"});
+        QVERIFY(m_git->listSubmodules().contains("vendor/lib"));
+        QFile dirty(m_work + "/vendor/lib/lib.txt");
+        QVERIFY(dirty.open(QIODevice::Append | QIODevice::Text));
+        dirty.write("dirty\n");
+        dirty.close();
+        QVERIFY(!m_git->resetSubmodule("vendor/lib"));
+        run(m_work + "/vendor/lib", {"checkout", "--", "."});
+        QVERIFY(m_git->resetSubmodule("vendor/lib"));
     }
 
     void cleanupTestCase() {
