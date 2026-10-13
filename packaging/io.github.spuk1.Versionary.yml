@@ -1,0 +1,27 @@
+app-id: io.github.spuk1.Versionary
+runtime: org.kde.Platform
+runtime-version: '6.8'
+sdk: org.kde.Sdk
+command: Versionary
+finish-args:
+  # Wayland + X11, GPU, host network (clone/push/pull, OAuth, API)
+  - --share=ipc
+  - --share=network
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --device=dri
+  # Full home access: repositories can live anywhere, like the native build
+  - --filesystem=home
+  # Browser-based OAuth opens the host browser through the OpenURI portal
+  # (no extra permission needed); the loopback server works because the
+  # network namespace is shared with the host.
+modules:
+  - name: versionary
+    buildsystem: cmake
+    builddir: true
+    config-opts:
+      - -DCMAKE_BUILD_TYPE=Release
+    sources:
+      - type: git
+        url: https://github.com/spuk1/versionary-qt.git
+        branch: main

@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.spuk1.Versionary</id>
+  <metadata_license>FSFAP</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <name>Versionary</name>
+  <summary>A fast, native Git GUI client</summary>
+  <description>
+    <p>
+      Versionary is a free, open-source Git client with a native Qt
+      interface. It provides repository tabs and workspaces, staging with
+      partial line selection, a graphical commit history, branching,
+      stashing, submodules, and OAuth for GitHub, Bitbucket, and GitLab —
+      without the resource footprint of an Electron app.
+    </p>
+  </description>
+  <launchable type="desktop-id">io.github.spuk1.Versionary.desktop</launchable>
+  <developer>
+    <name>Leon</name>
+  </developer>
+  <url type="homepage">https://github.com/spuk1/versionary</url>
+  <url type="bugtracker">https://github.com/spuk1/versionary/issues</url>
+  <provides>
+    <binary>Versionary</binary>
+  </provides>
+  <requires>
+    <binary>git</binary>
+  </requires>
+  <content_rating type="oars-1.1" />
+</component>

@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Versionary
+GenericName=Git Client
+Comment=A fast, native Git GUI client
+Exec=Versionary %F
+Icon=io.github.spuk1.Versionary
+Terminal=false
+Categories=Development;RevisionControl;
+Keywords=git;version;control;repository;
+StartupWMClass=Versionary
