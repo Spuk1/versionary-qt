@@ -8,9 +8,12 @@
 #include "models/CommitLogModel.h"
 
 #include <QHBoxLayout>
+#include <QApplication>
 #include <QButtonGroup>
+#include <QClipboard>
 #include <QInputDialog>
 #include <QItemSelectionModel>
+#include <QLabel>
 #include <QLineEdit>
 #include <QListView>
 #include <QListWidget>
@@ -48,6 +51,11 @@ HistoryWidget::HistoryWidget(GitService *git, RepoManager *repos, QWidget *paren
     topRow->addWidget(tagBtn);
     topRow->addWidget(checkoutBtn);
     layout->addLayout(topRow);
+    m_emptyLabel = new QLabel("No commits yet.", this);
+    m_emptyLabel->setProperty("class", "muted");
+    m_emptyLabel->setAlignment(Qt::AlignCenter);
+    m_emptyLabel->setVisible(false);
+    layout->addWidget(m_emptyLabel);
 
     auto *splitter = new QSplitter(Qt::Horizontal, this);
     m_log = new QListView(splitter);
@@ -85,7 +93,10 @@ HistoryWidget::HistoryWidget(GitService *git, RepoManager *repos, QWidget *paren
     debounce->setSingleShot(true);
     debounce->setInterval(400);
     connect(m_search, &QLineEdit::textEdited, debounce, qOverload<>(&QTimer::start));
-    connect(debounce, &QTimer::timeout, this, [&] { m_model->reload(m_search->text()); });
+    connect(debounce, &QTimer::timeout, this, [&] {
+        m_model->reload(m_search->text());
+        updateEmptyLabel();
+    });
     connect(m_log->selectionModel(), &QItemSelectionModel::currentChanged, this,
             &HistoryWidget::onCommitSelected);
     connect(m_log, &QListView::doubleClicked, this, &HistoryWidget::checkoutSelected);
@@ -101,7 +112,10 @@ HistoryWidget::HistoryWidget(GitService *git, RepoManager *repos, QWidget *paren
         updateScopeButtons();
         refresh();
     });
-    auto rebuildGraph = [&] { rebuildRows(); };
+    auto rebuildGraph = [&] {
+        rebuildRows();
+        updateEmptyLabel();
+    };
     connect(m_model, &QAbstractItemModel::rowsInserted, this, rebuildGraph);
     connect(m_model, &QAbstractItemModel::rowsRemoved, this, rebuildGraph);
     connect(m_model, &QAbstractItemModel::modelReset, this, rebuildGraph);
@@ -118,12 +132,38 @@ void HistoryWidget::refresh() {
     m_details->clear();
     m_files->clear();
     m_diff->setDiff({});
-    if (m_repos->selectedPath().isEmpty())
+    if (m_repos->selectedPath().isEmpty()) {
+        updateEmptyLabel();
         return;
+    }
     updateScopeButtons();
     m_model->reload(m_search->text());
     if (m_model->rowCount() > 0)
         m_log->setCurrentIndex(m_model->index(0, 0));
+    updateEmptyLabel();
+}
+
+void HistoryWidget::updateEmptyLabel() {
+    const bool empty = m_model->rowCount() == 0;
+    m_emptyLabel->setText(m_search->text().trimmed().isEmpty() ? "No commits yet."
+                                                              : "No matching commits.");
+    m_emptyLabel->setVisible(empty);
+}
+
+void HistoryWidget::jumpToHead() {
+    const QList<CommitInfo> commits = m_model->allCommits();
+    for (int row = 0; row < commits.size(); ++row) {
+        const QStringList decos = commits.at(row).decorations;
+        for (const QString &d : decos) {
+            if (d.startsWith("HEAD")) {
+                const QModelIndex idx = m_model->index(row, 0);
+                m_log->setCurrentIndex(idx);
+                m_log->scrollTo(idx);
+                return;
+            }
+        }
+    }
+    emit statusMessage("HEAD commit is not in the current list.", true);
 }
 
 QString HistoryWidget::scopeRef() const {
@@ -176,7 +216,90 @@ void HistoryWidget::showContextMenu(const QPoint &pos) {
     QMenu menu(this);
     menu.addAction("Checkout", [&] { checkoutSelected(); });
     menu.addAction("Create tag…", [&] { createTagForSelected(); });
+    menu.addAction("Copy SHA", [&] {
+        if (!m_selectedOid.isEmpty())
+            QApplication::clipboard()->setText(m_selectedOid);
+    });
+    menu.addAction("Jump to HEAD", [&] { jumpToHead(); });
+    menu.addSeparator();
+    menu.addAction("Cherry-pick here", [&] { cherryPickSelected(); });
+    menu.addAction("Revert this commit", [&] { revertSelected(); });
+    menu.addAction("Rebase current branch onto this", [&] { rebaseOntoSelected(); });
     menu.exec(m_log->viewport()->mapToGlobal(pos));
+}
+
+void HistoryWidget::cherryPickSelected() {
+    if (m_selectedOid.isEmpty()) {
+        emit statusMessage("Select a commit first", true);
+        return;
+    }
+    const QString oid = m_selectedOid;
+    emit busyChanged(true);
+    runBackgroundVoid(
+        this, [this, oid] { m_git->cherryPick(oid); },
+        [&] {
+            emit busyChanged(false);
+            refresh();
+            emit branchesChanged();
+            emit statusMessage("Cherry-picked " + oid.left(7), false);
+        },
+        [&](const QString &e) {
+            emit busyChanged(false);
+            emit statusMessage(e + "\nResolve conflicts in Changes, then Continue.", true);
+            refresh();
+            emit branchesChanged();
+        });
+}
+
+void HistoryWidget::revertSelected() {
+    if (m_selectedOid.isEmpty()) {
+        emit statusMessage("Select a commit first", true);
+        return;
+    }
+    const QString oid = m_selectedOid;
+    emit busyChanged(true);
+    runBackgroundVoid(
+        this, [this, oid] { m_git->revertCommit(oid); },
+        [&] {
+            emit busyChanged(false);
+            refresh();
+            emit branchesChanged();
+            emit statusMessage("Reverted " + oid.left(7), false);
+        },
+        [&](const QString &e) {
+            emit busyChanged(false);
+            emit statusMessage(e, true);
+            refresh();
+            emit branchesChanged();
+        });
+}
+
+void HistoryWidget::rebaseOntoSelected() {
+    if (m_selectedOid.isEmpty()) {
+        emit statusMessage("Select a commit first", true);
+        return;
+    }
+    if (QMessageBox::question(this, "Rebase",
+                              "Rebase the current branch onto " + m_selectedOid.left(7)
+                                  + "? (rewrites history)")
+        != QMessageBox::Yes)
+        return;
+    const QString oid = m_selectedOid;
+    emit busyChanged(true);
+    runBackgroundVoid(
+        this, [this, oid] { m_git->rebaseOnto(oid); },
+        [&] {
+            emit busyChanged(false);
+            refresh();
+            emit branchesChanged();
+            emit statusMessage("Rebase complete.", false);
+        },
+        [&](const QString &e) {
+            emit busyChanged(false);
+            emit statusMessage(e + "\nResolve conflicts in Changes, then Continue.", true);
+            refresh();
+            emit branchesChanged();
+        });
 }
 
 void HistoryWidget::onCommitSelected() {
@@ -227,10 +350,11 @@ void HistoryWidget::onHistoryFileSelected() {
     const QString oid = m_selectedOid;
     runBackground<QString>(
         this, [this, path] { return m_git->commitFileDiff(m_selectedOid, path, 3); },
-        [this, repo, oid](const QString &patch) {
+        [this, repo, oid, path](const QString &patch) {
             if (repo != m_repos->selectedPath() || oid != m_selectedOid)
                 return;
             m_diff->setDiff(patch);
+            m_diff->setLanguageFromFile(path);
         },
         [&](const QString &err) { emit statusMessage(err, true); });
 }
@@ -246,7 +370,10 @@ void HistoryWidget::createTagForSelected() {
     const QString oid = m_selectedOid;
     runBackgroundVoid(
         this, [this, oid, name] { m_git->createTag(name.trimmed(), oid); },
-        [&] { emit statusMessage("Tag created.", false); },
+        [&] {
+            emit statusMessage("Tag created.", false);
+            refresh();
+        },
         [&](const QString &e) { emit statusMessage(e, true); });
 }
 

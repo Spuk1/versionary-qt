@@ -10,6 +10,7 @@ class DiffViewer;
 class GitService;
 class HistoryDelegate;
 class RepoManager;
+class QLabel;
 class QListView;
 class QListWidget;
 class QLineEdit;
@@ -35,7 +36,14 @@ private slots:
     void onHistoryFileSelected();
     void createTagForSelected();
     void checkoutSelected();
+    void cherryPickSelected();
+    void revertSelected();
+    void rebaseOntoSelected();
+    void jumpToHead();
     void showContextMenu(const QPoint &pos);
+
+private:
+    void updateEmptyLabel();
 
 private:
     void loadDetails(const QString &oid);
@@ -50,6 +58,7 @@ private:
     HistoryDelegate *m_delegate = nullptr;
     QListView *m_log;
     QLineEdit *m_search;
+    QLabel *m_emptyLabel = nullptr;
     QPushButton *m_scopeBranch = nullptr;
     QPushButton *m_scopeAll = nullptr;
     bool m_showAll = false;
