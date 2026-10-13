@@ -151,7 +151,7 @@ QString runDiffLenient(GitRunner &git, const QString &repo, const QStringList &a
 } // namespace
 
 FileDiff GitService::fileDiff(const QString &filepath, const QString &base,
-                              const QString &target, int context) {
+                              const QString &target, int context, bool ignoreWhitespace) {
     requireRepo();
     FileDiff d;
     QString fp = filepath.trimmed();
@@ -165,9 +165,10 @@ FileDiff GitService::fileDiff(const QString &filepath, const QString &base,
     d.target = target;
     try {
         const QString unity = "-U" + QString::number(context);
+        const QStringList wsFlag = ignoreWhitespace ? QStringList{"-w"} : QStringList{};
         const GitResult tracked = m_git.run({"ls-files", "--error-unmatch", "--", fp}, m_repo);
         if (!tracked.ok()) {
-            d.patch = runDiffLenient(m_git, m_repo, {unity, "--no-index", "--", "/dev/null", fp});
+            d.patch = runDiffLenient(m_git, m_repo, QStringList{unity} + wsFlag + QStringList{"--no-index", "--", "/dev/null", fp});
             if (d.patch.trimmed().isEmpty()) {
                 QFile f(QDir(m_repo).absoluteFilePath(fp));
                 if (!f.open(QIODevice::ReadOnly | QIODevice::Text)) {
@@ -178,16 +179,16 @@ FileDiff GitService::fileDiff(const QString &filepath, const QString &base,
             }
         } else if ((base == "HEAD" || base == "INDEX") && target == "WORKDIR") {
             d.patch = base == "INDEX"
-                ? runDiffLenient(m_git, m_repo, {unity, "--", fp})
-                : runDiffLenient(m_git, m_repo, {unity, "HEAD", "--", fp});
+                ? runDiffLenient(m_git, m_repo, QStringList{unity} + wsFlag + QStringList{"--", fp})
+                : runDiffLenient(m_git, m_repo, QStringList{unity} + wsFlag + QStringList{"HEAD", "--", fp});
         } else if (base == "HEAD" && target == "INDEX") {
-            d.patch = runDiffLenient(m_git, m_repo, {unity, "--cached", "--", fp});
+            d.patch = runDiffLenient(m_git, m_repo, QStringList{unity} + wsFlag + QStringList{"--cached", "--", fp});
         } else if (target == "WORKDIR" && !base.isEmpty() && base != "WORKDIR" && base != "INDEX") {
-            d.patch = runDiffLenient(m_git, m_repo, {unity, base, "--", fp});
+            d.patch = runDiffLenient(m_git, m_repo, QStringList{unity} + wsFlag + QStringList{base, "--", fp});
         } else if (!base.isEmpty() && !target.isEmpty() && base != "WORKDIR" && target != "WORKDIR") {
-            d.patch = runDiffLenient(m_git, m_repo, {unity, base, target, "--", fp});
+            d.patch = runDiffLenient(m_git, m_repo, QStringList{unity} + wsFlag + QStringList{base, target, "--", fp});
         } else {
-            d.patch = runDiffLenient(m_git, m_repo, {unity, "--", fp});
+            d.patch = runDiffLenient(m_git, m_repo, QStringList{unity} + wsFlag + QStringList{"--", fp});
         }
         d.ok = true;
     } catch (const GitException &e) {

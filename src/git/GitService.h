@@ -1,10 +1,15 @@
 #pragma once
 
 #include "core/GitRunner.h"
+#include "git/OperationState.h"
+#include "git/ProgressParse.h"
 #include "models/GitTypes.h"
 
 #include <QObject>
 #include <QSet>
+#include <atomic>
+#include <functional>
+#include <memory>
 #include <stdexcept>
 
 class AuthStore;
@@ -32,6 +37,8 @@ public:
 
     static QString toplevelOf(const QString &path);
     static QString formatGitError(const GitResult &result);
+    // Cheap local dirty check for any path (no auth needed).
+    static bool hasUncommittedChanges(const QString &path);
 
     // Branch
     QString currentBranch();
@@ -70,7 +77,8 @@ public:
     QString commitFileDiff(const QString &oid, const QString &filepath, int context,
                            int perParent = -1);
     FileDiff fileDiff(const QString &filepath, const QString &base = "HEAD",
-                      const QString &target = "WORKDIR", int context = 3);
+                      const QString &target = "WORKDIR", int context = 3,
+                      bool ignoreWhitespace = false);
 
     // Stash
     void stashPush(const QString &message, const QStringList &files);
@@ -78,20 +86,50 @@ public:
     void applyStash(const QString &ref);
     void popStash(const QString &ref);
     void dropStash(const QString &ref);
+    // Restore a single file from a stash into the working tree.
+    void applyStashFile(const QString &ref, const QString &file);
     void renameStash(const QString &ref, const QString &newMessage);
     void clearStashes();
 
     // Transport
-    void fetch();
-    void push(bool setUpstream);
-    void pull();
-    QString cloneRepo(const QString &url, const QString &destBase, const QString &accountKey);
+    using ProgressCallback = std::function<void(const GitProgress &)>;
+    void fetch(ProgressCallback progress = {},
+               std::shared_ptr<std::atomic_bool> cancel = {});
+    void push(bool setUpstream, ProgressCallback progress = {},
+              std::shared_ptr<std::atomic_bool> cancel = {});
+    void pull(ProgressCallback progress = {},
+              std::shared_ptr<std::atomic_bool> cancel = {});
+    QString cloneRepo(const QString &url, const QString &destBase, const QString &accountKey,
+                      ProgressCallback progress = {},
+                      std::shared_ptr<std::atomic_bool> cancel = {});
 
     // Submodules
     QStringList listSubmodules();
     bool hasSubmodules() const;
     // Returns false when the submodule worktree is dirty (reset refused).
     bool resetSubmodule(const QString &relPath);
+
+    // --- History editing / conflict flows (GitServiceAdvanced.cpp) -------
+    OperationState operationState();
+    QStringList conflictedFiles();
+    void checkoutOurs(const QString &file);
+    void checkoutTheirs(const QString &file);
+    void markResolved(const QString &file);
+    void mergeAbort();
+    void mergeContinue();
+    void amend(const QString &message);
+    void undoLastCommit();
+    void cherryPick(const QString &oid);
+    void cherryPickAbort();
+    void cherryPickContinue();
+    void revertCommit(const QString &oid);
+    void rebaseOnto(const QString &upstream);
+    void rebaseAbort();
+    void rebaseContinue();
+    void rebaseSkip();
+    QString stashDiff(const QString &ref);
+    QList<CommitInfo> fileLog(const QString &path, int limit = 100);
+    QList<BlameLine> blame(const QString &path, const QString &rev = "HEAD");
 
     // Auth test helper (auth:test)
     void testRemoteAccess(const QString &host, const QString &account);
@@ -100,6 +138,9 @@ private:
     struct TransportPlan;
     TransportPlan resolvePlan(bool preferOAuth = false);
     QStringList prefixed(const TransportPlan &plan) const;
+    GitResult runNetworkAction(const QString &action, const QStringList &opArgs,
+                               TransportPlan &plan, const ProgressCallback &progress,
+                               const std::shared_ptr<std::atomic_bool> &cancel);
     GitResult runOrThrow(const QStringList &args, const QProcessEnvironment &env,
                          const QByteArray &input = {});
     GitResult runOrThrow(const QStringList &args);

@@ -43,8 +43,7 @@ QString GitService::toplevelOf(const QString &path) {
     return r.stdoutText.trimmed();
 }
 
-QString GitService::formatGitError(const GitResult &result) {
-    QStringList parts;
+QString GitService::formatGitError(const GitResult &result) {    QStringList parts;
     if (result.timedOut)
         parts << "git timed out";
     if (!result.stderrText.trimmed().isEmpty())
@@ -53,6 +52,14 @@ QString GitService::formatGitError(const GitResult &result) {
         parts << "stdout: " + result.stdoutText.trimmed();
     parts << QString("exitCode=%1").arg(result.exitCode);
     return parts.join('\n');
+}
+
+bool GitService::hasUncommittedChanges(const QString &path) {
+    if (path.isEmpty())
+        return false;
+    GitRunner git;
+    const GitResult r = git.run({"status", "--porcelain"}, path);
+    return r.ok() && !r.stdoutText.trimmed().isEmpty();
 }
 
 GitResult GitService::runOrThrow(const QStringList &args, const QProcessEnvironment &env,
@@ -422,6 +429,13 @@ void GitService::dropStash(const QString &ref) {
     runOrThrow({"stash", "drop", QString("stash@{%1}").arg(StashUtils::toRefIdx(ref))});
 }
 
+void GitService::applyStashFile(const QString &ref, const QString &file) {
+    const QString target = file.trimmed();
+    if (target.isEmpty())
+        throw GitException("Invalid filepath");
+    runOrThrow({"checkout", QString("stash@{%1}").arg(StashUtils::toRefIdx(ref)), "--", target});
+}
+
 void GitService::renameStash(const QString &ref, const QString &newMessage) {
     const QString message = newMessage.trimmed();
     if (message.isEmpty())
@@ -441,35 +455,61 @@ void GitService::clearStashes() {
 
 // --- Transport ------------------------------------------------------------
 
-void GitService::fetch() {
-    requireRepo();
-    const bool subs = hasSubmodules();
-    TransportPlan plan = resolvePlan();
-    auto runFetch = [&](const TransportPlan &p) {
-        QStringList args = prefixed(p);
-        args << "fetch" << "-p";
-        if (subs)
-            args << "--recurse-submodules";
-        const GitResult r = m_git.run(args, m_repo, p.env);
-        if (!r.ok())
-            throw transportError("fetch", formatGitError(r), p.mode);
+GitResult GitService::runNetworkAction(const QString &action, const QStringList &opArgs,
+                                       TransportPlan &plan,
+                                       const ProgressCallback &progress,
+                                       const std::shared_ptr<std::atomic_bool> &cancel) {
+    auto attempt = [&](const TransportPlan &p) {
+        const QStringList args = prefixed(p) + opArgs;
+        if (!progress || !cancel)
+            return m_git.run(args, m_repo, p.env);
+        QString pending;
+        GitResult r = m_git.runStreaming(
+            args, m_repo, p.env,
+            [&](const QString &chunk) {
+                pending += chunk;
+                if (pending.size() > 4096)
+                    pending = pending.right(4096);
+                progress(parseProgressChunk(pending));
+            },
+            *cancel);
+        if (r.cancelled)
+            throw GitException("Cancelled");
+        return r;
     };
     try {
-        runFetch(plan);
+        const GitResult r = attempt(plan);
+        if (!r.ok())
+            throw transportError(action, formatGitError(r), plan.mode);
+        return r;
     } catch (const GitException &e) {
         const QString msg = e.qmessage();
+        if (msg == "Cancelled")
+            throw;
         if (plan.mode == AuthPlanner::Mode::Ssh && isSshAuthFailure(msg)) {
             const TransportPlan oauth = resolvePlan(true);
             if (oauth.mode == AuthPlanner::Mode::OAuth) {
                 plan = oauth;
-                runFetch(plan);
-            } else {
-                throw;
+                const GitResult r = attempt(plan);
+                if (!r.ok())
+                    throw transportError(action, formatGitError(r), plan.mode);
+                return r;
             }
-        } else {
-            throw;
         }
+        throw;
     }
+}
+
+void GitService::fetch(ProgressCallback progress, std::shared_ptr<std::atomic_bool> cancel) {
+    requireRepo();
+    const bool subs = hasSubmodules();
+    TransportPlan plan = resolvePlan();
+    QStringList opArgs = {"fetch", "-p"};
+    if (subs)
+        opArgs << "--recurse-submodules";
+    if (progress)
+        opArgs << "--progress";
+    runNetworkAction("fetch", opArgs, plan, progress, cancel);
     if (subs) {
         const QStringList rewrite = prefixed(plan);
         m_git.run(QStringList() << rewrite << "submodule" << "sync" << "--recursive", m_repo,
@@ -480,67 +520,31 @@ void GitService::fetch() {
     }
 }
 
-void GitService::push(bool setUpstream) {
+void GitService::push(bool setUpstream, ProgressCallback progress,
+                      std::shared_ptr<std::atomic_bool> cancel) {
     requireRepo();
     TransportPlan plan = resolvePlan();
-    auto runPush = [&](const TransportPlan &p) {
-        QStringList args = prefixed(p);
-        args << "push";
-        if (setUpstream) {
-            const GitResult b = m_git.run({"branch", "--show-current"}, m_repo);
-            args << "--set-upstream" << "origin" << b.stdoutText.trimmed();
-        }
-        const GitResult r = m_git.run(args, m_repo, p.env);
-        if (!r.ok())
-            throw transportError("push", formatGitError(r), p.mode);
-    };
-    try {
-        runPush(plan);
-    } catch (const GitException &e) {
-        const QString msg = e.qmessage();
-        if (plan.mode == AuthPlanner::Mode::Ssh && isSshAuthFailure(msg)) {
-            const TransportPlan oauth = resolvePlan(true);
-            if (oauth.mode == AuthPlanner::Mode::OAuth) {
-                runPush(oauth);
-            } else {
-                throw;
-            }
-        } else {
-            throw;
-        }
+    QStringList opArgs = {"push"};
+    if (setUpstream) {
+        const GitResult b = m_git.run({"branch", "--show-current"}, m_repo);
+        opArgs << "--set-upstream" << "origin" << b.stdoutText.trimmed();
     }
+    if (progress)
+        opArgs << "--progress";
+    runNetworkAction("push", opArgs, plan, progress, cancel);
 }
 
-void GitService::pull() {
+void GitService::pull(ProgressCallback progress, std::shared_ptr<std::atomic_bool> cancel) {
     requireRepo();
     const bool subs = hasSubmodules();
     TransportPlan plan = resolvePlan();
-    auto runPull = [&](const TransportPlan &p) {
-        QStringList args = prefixed(p);
-        args << "pull";
-        if (subs)
-            args << "--recurse-submodules";
-        args << "--no-rebase" << "--no-edit";
-        const GitResult r = m_git.run(args, m_repo, p.env);
-        if (!r.ok())
-            throw transportError("pull", formatGitError(r), p.mode);
-    };
-    try {
-        runPull(plan);
-    } catch (const GitException &e) {
-        const QString msg = e.qmessage();
-        if (plan.mode == AuthPlanner::Mode::Ssh && isSshAuthFailure(msg)) {
-            const TransportPlan oauth = resolvePlan(true);
-            if (oauth.mode == AuthPlanner::Mode::OAuth) {
-                plan = oauth;
-                runPull(plan);
-            } else {
-                throw;
-            }
-        } else {
-            throw;
-        }
-    }
+    QStringList opArgs = {"pull"};
+    if (subs)
+        opArgs << "--recurse-submodules";
+    opArgs << "--no-rebase" << "--no-edit";
+    if (progress)
+        opArgs << "--progress";
+    runNetworkAction("pull", opArgs, plan, progress, cancel);
     if (subs) {
         const QStringList rewrite = prefixed(plan);
         m_git.run(QStringList() << rewrite << "submodule" << "sync" << "--recursive", m_repo,
@@ -552,7 +556,8 @@ void GitService::pull() {
 }
 
 QString GitService::cloneRepo(const QString &url, const QString &destBase,
-                              const QString &accountKey) {
+                              const QString &accountKey, ProgressCallback progress,
+                              std::shared_ptr<std::atomic_bool> cancel) {
     const QString name = RemoteUtils::repoNameFromUrl(url);
     if (name.isEmpty())
         throw GitException("Cannot derive a repository name from the URL.");
@@ -610,7 +615,27 @@ QString GitService::cloneRepo(const QString &url, const QString &destBase,
             env.insert("GIT_SSH_COMMAND", AuthPlanner::buildSshCommand(keyPath));
     }
     GitRunner git;
-    const GitResult r = git.run({"clone", cloneUrl, targetPath}, base, env);
+    QStringList cloneArgs = {"clone"};
+    if (progress)
+        cloneArgs << "--progress";
+    cloneArgs << cloneUrl << targetPath;
+    GitResult r;
+    if (progress && cancel) {
+        QString pending;
+        r = git.runStreaming(
+            cloneArgs, base, env,
+            [&](const QString &chunk) {
+                pending += chunk;
+                if (pending.size() > 4096)
+                    pending = pending.right(4096);
+                progress(parseProgressChunk(pending));
+            },
+            *cancel);
+        if (r.cancelled)
+            throw GitException("Cancelled");
+    } else {
+        r = git.run(cloneArgs, base, env);
+    }
     if (!r.ok()) {
         QString msg = r.stderrText + "\n" + r.stdoutText;
         msg.replace(QRegularExpression("(https?://)[^@\\s/]+@", QRegularExpression::CaseInsensitiveOption), "\\1***@");
