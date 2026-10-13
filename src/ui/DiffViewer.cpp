@@ -1,40 +1,277 @@
 #include "DiffViewer.h"
 #include "ThemeColors.h"
 
+#include <QApplication>
 #include <QMouseEvent>
 #include <QPainter>
+#include <QRegularExpression>
 #include <QSyntaxHighlighter>
 #include <QTextBlock>
+#include <QWheelEvent>
 
 namespace {
-// Green/red diff highlighting, mirroring the original diff colours.
-class DiffHighlighter : public QSyntaxHighlighter {
-public:
-    using QSyntaxHighlighter::QSyntaxHighlighter;
-
-protected:
-    void highlightBlock(const QString &text) override {
-        QTextCharFormat fmt;
-        if (text.startsWith("@@")) {
-            fmt.setForeground(QColor("#6aa9ff"));
-            fmt.setFontWeight(QFont::Bold);
-        } else if (text.startsWith('+') && !text.startsWith("+++")) {
-            fmt.setBackground(ThemeColors::diffAddedBg());
-            fmt.setForeground(QColor("#3fb950"));
-        } else if (text.startsWith('-') && !text.startsWith("---")) {
-            fmt.setBackground(ThemeColors::diffRemovedBg());
-            fmt.setForeground(QColor("#f85149"));
-        } else if (text.startsWith("diff ") || text.startsWith("index ")
-                   || text.startsWith("---") || text.startsWith("+++")) {
-            fmt.setForeground(QColor("#8b949e"));
-            fmt.setFontWeight(QFont::Bold);
-        }
-        if (fmt.isEmpty())
-            return;
-        setFormat(0, text.length(), fmt);
-    }
+// Code highlighting inside diffs (the original used Monaco's diff
+// grammar). Keyword/string/comment colors follow the current theme;
+// backgrounds always come from the diff-line pass so +/- bands stay intact.
+struct CodeRule {
+    QRegularExpression pattern;
+    QColor fg;
 };
 
+QColor codeColor(const QPalette &pal, const QColor &dark, const QColor &light) {
+    return pal.color(QPalette::Window).lightness() < 128 ? dark : light;
+}
+
+bool isCLike(const QString &ext) {
+    return QStringList({"cpp", "hpp", "h", "c", "cc", "java", "js", "jsx", "ts",
+                        "tsx", "qml", "cs", "go", "rs", "swift", "kt"})
+        .contains(ext);
+}
+
+} // namespace
+
+WordRange changedMiddle(const QString &removed, const QString &added) {
+    WordRange r;
+    const int maxLen = 2000;
+    if (removed.size() > maxLen || added.size() > maxLen)
+        return r;
+    int prefix = 0;
+    const int bound = qMin(removed.size(), added.size());
+    while (prefix < bound && removed.at(prefix) == added.at(prefix))
+        ++prefix;
+    int aSuffix = removed.size();
+    int bSuffix = added.size();
+    while (aSuffix > prefix && bSuffix > prefix
+           && removed.at(aSuffix - 1) == added.at(bSuffix - 1)) {
+        --aSuffix;
+        --bSuffix;
+    }
+    if (prefix == aSuffix && prefix == bSuffix)
+        return r; // identical
+    r.found = true;
+    r.aStart = prefix;
+    r.aEnd = aSuffix;
+    r.bStart = prefix;
+    r.bEnd = bSuffix;
+    return r;
+}
+
+namespace {
+
+QList<CodeRule> rulesFor(const QString &ext, const QPalette &pal) {
+    QList<CodeRule> rules;
+    const QColor keyword = codeColor(pal, QColor("#ff7b72"), QColor("#cf222e"));
+    const QColor str = codeColor(pal, QColor("#a5d6ff"), QColor("#0a3069"));
+    const QColor comment = codeColor(pal, QColor("#8b949e"), QColor("#6e7781"));
+    const QColor preproc = codeColor(pal, QColor("#ffa657"), QColor("#953800"));
+    const QColor literal = codeColor(pal, QColor("#79c0ff"), QColor("#0550ae"));
+    const QColor strDouble = str;
+    auto kw = [&](const QString &words) {
+        rules << CodeRule{QRegularExpression("\\b(" + words + ")\\b"), keyword};
+    };
+    auto dqString = [&] {
+        rules << CodeRule{QRegularExpression("\"([^\"\\\\]|\\\\.)*\""), strDouble};
+    };
+    if (isCLike(ext)) {
+        kw("alignas|alignof|asm|auto|bool|break|case|catch|char|class|const|consteval|"
+           "constexpr|continue|decltype|default|delete|do|double|dynamic_cast|else|enum|"
+           "explicit|export|extends|extern|false|final|float|for|friend|function|goto|if|"
+           "implements|import|inline|int|interface|long|mutable|namespace|new|noexcept|nullptr|"
+           "operator|override|package|private|protected|public|register|return|short|signed|"
+           "sizeof|static|strictfp|struct|super|switch|template|this|throw|throws|true|try|"
+           "typedef|typename|union|unsigned|using|var|virtual|void|volatile|while|yield|"
+           "async|await|let|signal|slot|property|readonly|required");
+        rules << CodeRule{QRegularExpression("#[a-z]+"), preproc};
+        dqString();
+        rules << CodeRule{QRegularExpression("'([^'\\\\]|\\\\.)*'"), str};
+        rules << CodeRule{QRegularExpression("//[^\n]*"), comment};
+    } else if (ext == "py" || ext == "pyw") {
+        kw("False|None|True|and|as|assert|async|await|break|class|continue|def|del|elif|"
+           "else|except|finally|for|from|global|if|import|in|is|lambda|nonlocal|not|or|"
+           "pass|raise|return|try|while|with|yield");
+        dqString();
+        rules << CodeRule{QRegularExpression("'([^'\\\\]|\\\\.)*'"), str};
+        rules << CodeRule{QRegularExpression("#[^\n]*"), comment};
+    } else if (ext == "sh" || ext == "bash" || ext == "zsh") {
+        kw("case|do|done|elif|else|esac|exit|export|fi|for|function|if|in|return|select|"
+           "then|until|while");
+        dqString();
+        rules << CodeRule{QRegularExpression("'[^']*'"), str};
+        rules << CodeRule{QRegularExpression("#[^\n]*"), comment};
+    } else if (ext == "cmake" || ext == "txt") {
+        kw("add_executable|add_library|cmake_minimum_required|else|elseif|endforeach|endif|"
+           "endmacro|endfunction|find_package|foreach|function|if|include|macro|message|"
+           "option|project|return|set|target_include_directories|target_link_libraries");
+        dqString();
+        rules << CodeRule{QRegularExpression("#[^\n]*"), comment};
+    } else if (ext == "json") {
+        rules << CodeRule{QRegularExpression("\"([^\"\\\\]|\\\\.)*\"(?=\\s*:)"), preproc};
+        dqString();
+        rules << CodeRule{QRegularExpression("\\b(true|false|null)\\b"), literal};
+        rules << CodeRule{QRegularExpression("\\b-?\\d+(\\.\\d+)?\\b"), literal};
+    } else if (ext == "yml" || ext == "yaml") {
+        rules << CodeRule{QRegularExpression("\"([^\"\\\\]|\\\\.)*\""), str};
+        rules << CodeRule{QRegularExpression("'[^']*'"), str};
+        rules << CodeRule{QRegularExpression("#[^\n]*"), comment};
+        rules << CodeRule{QRegularExpression("\\b(true|false|null|yes|no|on|off)\\b"), literal};
+    } else if (ext == "md" || ext == "markdown") {
+        rules << CodeRule{QRegularExpression("^#{1,6}\\s.*"), preproc};
+        rules << CodeRule{QRegularExpression("`[^`]*`"), str};
+    }
+    return rules;
+}
+
+// CodeRule and friends above stay in the anonymous namespace; the
+// highlighter itself is declared in the header (DiffViewer owns one).
+} // namespace
+
+// Green/red diff highlighting, mirroring the original diff colours.
+DiffHighlighter::DiffHighlighter(QTextDocument *doc) : QSyntaxHighlighter(doc) {}
+
+void DiffHighlighter::setExtension(const QString &ext) {
+    if (ext != m_ext) {
+        m_ext = ext;
+        rehighlight();
+    }
+}
+
+void DiffHighlighter::paintWordDiff(const QString &content, int offset) {
+    const int me = currentBlock().blockNumber();
+    auto lineAt = [&](int n) {
+        const QTextBlock b = document()->findBlockByNumber(n);
+        return b.isValid() ? b.text() : QString();
+    };
+    auto isMinus = [&](int n) {
+        const QString t = lineAt(n);
+        return !t.isEmpty() && t.startsWith('-') && !t.startsWith("---");
+    };
+    auto isPlus = [&](int n) {
+        const QString t = lineAt(n);
+        return !t.isEmpty() && t.startsWith('+') && !t.startsWith("+++");
+    };
+    const bool mineIsMinus = isMinus(me);
+    if (!mineIsMinus && !isPlus(me))
+        return;
+    QString other;
+    bool otherIsMinus = false;
+    if (mineIsMinus) {
+        int runStart = me;
+        while (runStart - 1 >= 0 && isMinus(runStart - 1))
+            --runStart;
+        int runEnd = me;
+        while (isMinus(runEnd + 1))
+            ++runEnd;
+        int plusCount = 0;
+        for (int k = runEnd + 1; isPlus(k); ++k)
+            ++plusCount;
+        const int idx = me - runStart;
+        if (idx >= plusCount)
+            return;
+        other = lineAt(runEnd + 1 + idx).mid(1);
+    } else {
+        int runEnd = me;
+        while (isPlus(runEnd + 1))
+            ++runEnd;
+        int runStart = me;
+        while (runStart - 1 >= 0 && isPlus(runStart - 1))
+            --runStart;
+        int minusEnd = runStart - 1;
+        int minusStart = minusEnd;
+        while (minusStart - 1 >= 0 && isMinus(minusStart - 1))
+            --minusStart;
+        const int minusCount = minusEnd >= minusStart ? minusEnd - minusStart + 1 : 0;
+        const int idx = me - runStart;
+        if (idx >= minusCount)
+            return;
+        other = lineAt(minusStart + idx).mid(1);
+        otherIsMinus = true;
+    }
+    const QString mine = content;
+    const WordRange wr = otherIsMinus ? changedMiddle(other, mine) : changedMiddle(mine, other);
+    const int start = otherIsMinus ? wr.bStart : wr.aStart;
+    const int end = otherIsMinus ? wr.bEnd : wr.aEnd;
+    if (!wr.found || end <= start)
+        return;
+    QTextCharFormat fmt;
+    fmt.setBackground(mineIsMinus ? QColor(248, 81, 73, 110) : QColor(46, 160, 67, 110));
+    fmt.setFontWeight(QFont::Bold);
+    setFormat(offset + start, end - start, fmt);
+}
+
+void DiffHighlighter::highlightBlock(const QString &text) {
+        const QPalette pal = QApplication::palette();
+        if (text.startsWith("@@")) {
+            QTextCharFormat fmt;
+            fmt.setForeground(QColor("#6aa9ff"));
+            fmt.setFontWeight(QFont::Bold);
+            setFormat(0, text.length(), fmt);
+            return;
+        }
+        QColor bg;
+        QColor plainFg;
+        if (text.startsWith('+') && !text.startsWith("+++")) {
+            bg = ThemeColors::diffAddedBg();
+            plainFg = QColor("#3fb950");
+        } else if (text.startsWith('-') && !text.startsWith("---")) {
+            bg = ThemeColors::diffRemovedBg();
+            plainFg = QColor("#f85149");
+        } else if (text.startsWith("diff ") || text.startsWith("index ")
+                   || text.startsWith("---") || text.startsWith("+++")) {
+            QTextCharFormat fmt;
+            fmt.setForeground(QColor("#8b949e"));
+            fmt.setFontWeight(QFont::Bold);
+            setFormat(0, text.length(), fmt);
+            return;
+        } else if (text.startsWith(' ')) {
+            bg = QColor(Qt::transparent);
+            plainFg = pal.color(QPalette::Text);
+        } else {
+            return;
+        }
+        // Base band first…
+        QTextCharFormat base;
+        base.setBackground(bg);
+        base.setForeground(m_ext.isEmpty() ? plainFg
+                                           : codeColor(pal, QColor("#e6edf3"),
+                                                       QColor("#24292f")));
+        setFormat(0, text.length(), base);
+        // …then language tokens over the content (marker column skipped).
+        const int offset = 1;
+        const QString content = text.mid(offset);
+        for (const CodeRule &rule : rulesFor(m_ext, pal)) {
+            auto it = rule.pattern.globalMatch(content);
+            while (it.hasNext()) {
+                const auto m = it.next();
+                QTextCharFormat fmt;
+                fmt.setForeground(rule.fg);
+                fmt.setBackground(bg);
+                setFormat(offset + m.capturedStart(), m.capturedLength(), fmt);
+            }
+        }
+        // Multi-line /* */ comments for C-like languages.
+        if (isCLike(m_ext)) {
+            int start = (previousBlockState() == 1) ? 0 : content.indexOf("/*");
+            while (start >= 0) {
+                const int end = content.indexOf("*/", start + 2);
+                QTextCharFormat fmt;
+                fmt.setForeground(codeColor(pal, QColor("#8b949e"), QColor("#6e7781")));
+                fmt.setBackground(bg);
+                if (end < 0) {
+                    setFormat(offset + start, content.length() - start, fmt);
+                    setCurrentBlockState(1);
+                    return;
+                }
+                setFormat(offset + start, end - start + 2, fmt);
+                setCurrentBlockState(0);
+                start = content.indexOf("/*", end + 2);
+            }
+        }
+        // Word-level pairs last so they win over token colors.
+        paintWordDiff(content, offset);
+        setCurrentBlockState(0);
+    }
+
+namespace {
 class LineMargin : public QWidget {
 public:
     explicit LineMargin(DiffViewer *viewer) : QWidget(viewer), m_viewer(viewer) {}
@@ -60,7 +297,7 @@ private:
 DiffViewer::DiffViewer(QWidget *parent) : QPlainTextEdit(parent) {
     setReadOnly(true);
     setLineWrapMode(NoWrap);
-    new DiffHighlighter(document());
+    m_highlighter = new DiffHighlighter(document());
     m_margin = new LineMargin(this);
     m_margin->installEventFilter(this);
     viewport()->installEventFilter(this);
@@ -73,9 +310,23 @@ void DiffViewer::setDiff(const QString &patch) {
     m_diff = patch;
     m_selected.clear();
     m_anchor = -1;
+    if (m_highlighter)
+        m_highlighter->setExtension({});
     setPlainText(patch);
     updateSelections();
     updateMarginWidth();
+}
+
+void DiffViewer::setLanguageFromFile(const QString &filepath) {
+    QString ext;
+    const int dot = filepath.lastIndexOf('.');
+    const int slash = qMax(filepath.lastIndexOf('/'), filepath.lastIndexOf('\\'));
+    if (dot > slash)
+        ext = filepath.mid(dot + 1).toLower();
+    if (ext == "txt" && filepath.endsWith("CMakeLists.txt", Qt::CaseInsensitive))
+        ext = "cmake";
+    if (m_highlighter)
+        m_highlighter->setExtension(ext);
 }
 
 void DiffViewer::clearSelection() {
@@ -147,6 +398,18 @@ void DiffViewer::resizeEvent(QResizeEvent *event) {
     const QRect cr = contentsRect();
     m_margin->setGeometry(cr.left(), cr.top(), static_cast<LineMargin *>(m_margin)->marginWidth(),
                           cr.height());
+}
+
+void DiffViewer::wheelEvent(QWheelEvent *event) {
+    if (event->modifiers() & Qt::ControlModifier) {
+        if (event->angleDelta().y() > 0)
+            zoomIn();
+        else if (event->angleDelta().y() < 0)
+            zoomOut();
+        event->accept();
+        return;
+    }
+    QPlainTextEdit::wheelEvent(event);
 }
 
 void DiffViewer::updateMarginWidth() {
