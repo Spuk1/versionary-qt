@@ -41,12 +41,49 @@ QMap<QString, QString> &dotEnvCache() {
     return cache;
 }
 
-QString envOrDotEnv(const char *name) {
+QString envOrDotEnv(const char *name, const char *baked = "") {
     const QString sys = QProcessEnvironment::systemEnvironment().value(name);
     if (!sys.isEmpty())
         return sys;
+    // Packagers (AUR/Flatpak builds) bake credentials at build time so no
+    // secret file has to ship; developers use a local .env instead.
+    if (baked && *baked)
+        return QString::fromLatin1(baked);
     return dotEnvCache().value(name);
 }
+
+// Build-time baked credentials, e.g.
+// -DVERSIONARY_GITHUB_CLIENT_ID="Ov23...". Empty unless the packager sets them.
+#ifdef VERSIONARY_GITHUB_CLIENT_ID
+constexpr const char *kBakedGithubId = VERSIONARY_GITHUB_CLIENT_ID;
+#else
+constexpr const char *kBakedGithubId = "";
+#endif
+#ifdef VERSIONARY_BITBUCKET_CLIENT_ID
+constexpr const char *kBakedBitbucketId = VERSIONARY_BITBUCKET_CLIENT_ID;
+#else
+constexpr const char *kBakedBitbucketId = "";
+#endif
+#ifdef VERSIONARY_BITBUCKET_CLIENT_SECRET
+constexpr const char *kBakedBitbucketSecret = VERSIONARY_BITBUCKET_CLIENT_SECRET;
+#else
+constexpr const char *kBakedBitbucketSecret = "";
+#endif
+#ifdef VERSIONARY_GITHUB_CLIENT_SECRET
+constexpr const char *kBakedGithubSecret = VERSIONARY_GITHUB_CLIENT_SECRET;
+#else
+constexpr const char *kBakedGithubSecret = "";
+#endif
+#ifdef VERSIONARY_GITLAB_CLIENT_ID
+constexpr const char *kBakedGitlabId = VERSIONARY_GITLAB_CLIENT_ID;
+#else
+constexpr const char *kBakedGitlabId = "";
+#endif
+#ifdef VERSIONARY_GITLAB_CLIENT_SECRET
+constexpr const char *kBakedGitlabSecret = VERSIONARY_GITLAB_CLIENT_SECRET;
+#else
+constexpr const char *kBakedGitlabSecret = "";
+#endif
 } // namespace
 
 QString AppConfig::storageDir() {
@@ -71,12 +108,12 @@ QString AppConfig::userDataDir() {
 QString AppConfig::tokensPath() { return userDataDir() + "/tokens.json"; }
 QString AppConfig::sshSettingsPath() { return userDataDir() + "/ssh-settings.json"; }
 
-QString AppConfig::githubClientId() { return envOrDotEnv("GITHUB_CLIENT_ID"); }
-QString AppConfig::bitbucketClientId() { return envOrDotEnv("BITBUCKET_CLIENT_ID"); }
-QString AppConfig::bitbucketClientSecret() { return envOrDotEnv("CLIENT_BITBUCKET_SECRET"); }
-QString AppConfig::githubClientSecret() { return envOrDotEnv("CLIENT_GITHUB_SECRET"); }
-QString AppConfig::gitlabClientId() { return envOrDotEnv("GITLAB_CLIENT_ID"); }
-QString AppConfig::gitlabClientSecret() { return envOrDotEnv("CLIENT_GITLAB_SECRET"); }
+QString AppConfig::githubClientId() { return envOrDotEnv("GITHUB_CLIENT_ID", kBakedGithubId); }
+QString AppConfig::bitbucketClientId() { return envOrDotEnv("BITBUCKET_CLIENT_ID", kBakedBitbucketId); }
+QString AppConfig::bitbucketClientSecret() { return envOrDotEnv("CLIENT_BITBUCKET_SECRET", kBakedBitbucketSecret); }
+QString AppConfig::githubClientSecret() { return envOrDotEnv("CLIENT_GITHUB_SECRET", kBakedGithubSecret); }
+QString AppConfig::gitlabClientId() { return envOrDotEnv("GITLAB_CLIENT_ID", kBakedGitlabId); }
+QString AppConfig::gitlabClientSecret() { return envOrDotEnv("CLIENT_GITLAB_SECRET", kBakedGitlabSecret); }
 
 void AppConfig::ensureStorageDir() {
     QDir().mkpath(storageDir());

@@ -14,6 +14,13 @@ constexpr int kMaxRetries = 3;
 constexpr int kBaseDelayMs = 150;
 
 void sleepMs(int ms) { QThread::msleep(static_cast<unsigned long>(ms)); }
+
+// The app never wants an interactive editor (no terminal is attached),
+// so force non-interactive fallbacks for every spawned git process.
+void forceNonInteractiveEnv(QProcessEnvironment &env) {
+    env.insert("GIT_EDITOR", "true");
+    env.insert("GIT_SEQUENCE_EDITOR", "true");
+}
 } // namespace
 
 GitRunner::GitRunner(QObject *parent) : QObject(parent) {}
@@ -63,8 +70,7 @@ bool GitRunner::isGitInstalled() {
 
 GitResult GitRunner::run(const QStringList &args, const QString &cwd,
                          const QProcessEnvironment &env, const QByteArray &input,
-                         int timeoutMs) {
-    QElapsedTimer timer;
+                         int timeoutMs) {    QElapsedTimer timer;
     timer.start();
     GitResult out;
 
@@ -76,12 +82,11 @@ GitResult GitRunner::run(const QStringList &args, const QString &cwd,
         proc.setProgram("git");
         proc.setArguments(args);
         proc.setWorkingDirectory(cwd);
-        if (!env.isEmpty()) {
-            QProcessEnvironment merged = QProcessEnvironment::systemEnvironment();
-            for (const QString &key : env.keys())
-                merged.insert(key, env.value(key));
-            proc.setProcessEnvironment(merged);
-        }
+        QProcessEnvironment merged = QProcessEnvironment::systemEnvironment();
+        for (const QString &key : env.keys())
+            merged.insert(key, env.value(key));
+        forceNonInteractiveEnv(merged);
+        proc.setProcessEnvironment(merged);
         proc.start();
         if (!proc.waitForStarted(10000)) {
             out.stderrText = proc.errorString();
@@ -109,6 +114,59 @@ GitResult GitRunner::run(const QStringList &args, const QString &cwd,
         waitUntilUnlocked(gitDir, 2000 + kBaseDelayMs * (1 << attempt), 100);
     }
 
+    qDebug() << "git" << args.first() << "took" << timer.elapsed() << "ms";
+    return out;
+}
+
+GitResult GitRunner::runStreaming(const QStringList &args, const QString &cwd,
+                                  const QProcessEnvironment &env,
+                                  std::function<void(const QString &)> onChunk,
+                                  std::atomic_bool &cancelled, int timeoutMs) {
+    QElapsedTimer timer;
+    timer.start();
+    GitResult out;
+    waitUntilUnlocked(resolveGitDir(cwd), 1500, 100);
+
+    QProcess proc;
+    proc.setProgram("git");
+    proc.setArguments(args);
+    proc.setWorkingDirectory(cwd);
+    QProcessEnvironment merged = QProcessEnvironment::systemEnvironment();
+    for (const QString &key : env.keys())
+        merged.insert(key, env.value(key));
+    forceNonInteractiveEnv(merged);
+    proc.setProcessEnvironment(merged);
+    proc.start();
+    if (!proc.waitForStarted(10000)) {
+        out.stderrText = proc.errorString();
+        return out;
+    }
+    QByteArray stderrBuf;
+    while (!proc.waitForFinished(250)) {
+        if (cancelled.load()) {
+            proc.kill();
+            proc.waitForFinished(5000);
+            out.cancelled = true;
+            break;
+        }
+        const QByteArray chunk = proc.readAllStandardError();
+        if (!chunk.isEmpty()) {
+            stderrBuf += chunk;
+            if (onChunk)
+                onChunk(QString::fromUtf8(chunk));
+        }
+    }
+    if (!out.cancelled) {
+        const QByteArray tail = proc.readAllStandardError();
+        if (!tail.isEmpty()) {
+            stderrBuf += tail;
+            if (onChunk)
+                onChunk(QString::fromUtf8(tail));
+        }
+    }
+    out.exitCode = proc.exitCode();
+    out.stdoutText = QString::fromUtf8(proc.readAllStandardOutput());
+    out.stderrText = QString::fromUtf8(stderrBuf);
     qDebug() << "git" << args.first() << "took" << timer.elapsed() << "ms";
     return out;
 }
