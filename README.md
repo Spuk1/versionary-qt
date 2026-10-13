@@ -1,0 +1,84 @@
+# Versionary-Qt
+
+Native C++ / Qt6 port of [Versionary](https://github.com/spuk1/versionary),
+a free open-source Git GUI client. Same features as the Electron/React
+client, without the Chromium runtime: faster startup, lower memory use,
+and native look and feel.
+
+## Features (parity with the Electron client)
+
+- Multi-repository tabs with drag-reorder, rename, close
+- Workspaces grouping repositories
+- Fetch / pull / push (with set-upstream prompt), clone with account +
+  protocol selection and repository search
+- Branches: create, checkout, rename (local + remote), delete, merge,
+  fast-forward, ahead/behind, pull-request links (GitHub/Bitbucket)
+- Staging: stage/unstage/discard per file or all, partial line-level
+  stage/discard/unstage via clickable diff margin, commit
+- History: paginated searchable log, commit details, per-file diffs,
+  create tag, checkout commit (detached HEAD)
+- Stash: push with file checklist, apply/pop/drop/rename
+- Submodules: list, reset to recorded commit, auto sync on fetch/pull/clone
+- OAuth for GitHub, Bitbucket, GitLab (PKCE loopback, token refresh)
+- Global + per-repo SSH keys, ssh-agent detection
+- Git identity management, system/light/dark themes, onboarding wizard
+
+## Build
+
+Prerequisites: CMake 3.21+, Qt 6.4+ (Widgets, Network, Concurrent, Test),
+a C++17 compiler, and `git` on PATH.
+
+```bash
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j$(nproc)
+ctest --test-dir build --output-on-failure
+./build/Versionary
+```
+
+Copy `.env` next to the binary (or export the variables) to enable OAuth:
+
+```bash
+cp .env build/.env
+```
+
+## Install (Linux)
+
+```bash
+sudo scripts/install.sh          # installs to /usr/local
+sudo scripts/install.sh /usr     # installs to /usr
+```
+
+This installs the binary, desktop entry, icons, and AppStream metadata.
+OAuth keys are read from `~/.Versionary/.env` (same names as `.env`).
+
+### Arch Linux (AUR)
+
+```bash
+git clone https://aur.archlinux.org/versionary-qt-git.git
+cd versionary-qt-git
+makepkg -si
+```
+
+The `PKGBUILD` lives in `packaging/` (bump `pkgver` via the `pkgver()`
+function automatically on build).
+
+### Flatpak
+
+```bash
+flatpak-builder --install build-dir packaging/io.github.spuk1.Versionary.yml
+```
+
+Requires the `org.kde.Platform//6.8` runtime. The manifest is validated
+for structure locally; a full `flatpak-builder` run was not possible in
+this environment (no builder installed).
+
+## Layout
+
+- `src/core` — process runner, JSON stores, identity
+- `src/git` — git operations, auth planning, diff/patch helpers
+- `src/net` — OAuth + REST API clients
+- `src/models` — commit data types and paginated log model
+- `src/ui` — main window, panels, dialogs, theme
+- `tests` — QtTest unit tests
+
+See `Agents.md` for contributor rules.
