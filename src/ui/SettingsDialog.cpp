@@ -77,16 +77,19 @@ SettingsDialog::SettingsDialog(AuthStore *auth, ApiClient *api, IdentityStore *i
 void SettingsDialog::setupIdentityTab(QWidget *tab) {
     auto *layout = new QVBoxLayout(tab);
     auto *form = new QFormLayout();
+    m_identityScope = new QComboBox(tab);
+    m_identityScope->addItem("Global (~/.gitconfig)", "global");
+    if (!m_repoPath.isEmpty())
+        m_identityScope->addItem("This repository", "repo");
+    form->addRow("Scope:", m_identityScope);
     m_nameEdit = new QLineEdit(tab);
     m_emailEdit = new QLineEdit(tab);
-    const IdentityStore::Identity id = m_identity->load();
-    m_nameEdit->setText(id.name);
-    m_emailEdit->setText(id.email);
     form->addRow("Name:", m_nameEdit);
     form->addRow("Email:", m_emailEdit);
     m_identityState = new QLabel(tab);
     m_identityState->setProperty("class", "muted");
     form->addRow("", m_identityState);
+    reloadIdentity();
     layout->addLayout(form);
     layout->addStretch();
     m_identityTimer = new QTimer(this);
@@ -95,13 +98,31 @@ void SettingsDialog::setupIdentityTab(QWidget *tab) {
     connect(m_identityTimer, &QTimer::timeout, this, &SettingsDialog::saveIdentity);
     connect(m_nameEdit, &QLineEdit::textEdited, m_identityTimer, qOverload<>(&QTimer::start));
     connect(m_emailEdit, &QLineEdit::textEdited, m_identityTimer, qOverload<>(&QTimer::start));
+    connect(m_identityScope, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
+            [&](int) { reloadIdentity(); });
+}
+
+QString SettingsDialog::identityRepoScope() const {
+    if (m_identityScope && m_identityScope->currentData().toString() == "repo")
+        return m_repoPath;
+    return {};
+}
+
+void SettingsDialog::reloadIdentity() {
+    const IdentityStore::Identity id = m_identity->load(identityRepoScope());
+    const QSignalBlocker blockName(m_nameEdit);
+    const QSignalBlocker blockEmail(m_emailEdit);
+    m_nameEdit->setText(id.name);
+    m_emailEdit->setText(id.email);
+    m_identityState->clear();
 }
 
 void SettingsDialog::saveIdentity() {
     QString error;
     if (m_nameEdit->text().trimmed().isEmpty() || m_emailEdit->text().trimmed().isEmpty())
         return;
-    if (m_identity->save(m_nameEdit->text().trimmed(), m_emailEdit->text().trimmed(), &error)) {
+    if (m_identity->save(m_nameEdit->text().trimmed(), m_emailEdit->text().trimmed(), &error,
+                         identityRepoScope())) {
         m_identityState->setText("Saved ✓");
         QTimer::singleShot(1200, this, [&] { m_identityState->clear(); });
     } else {

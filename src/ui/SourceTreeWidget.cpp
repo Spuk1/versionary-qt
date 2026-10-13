@@ -1,12 +1,15 @@
 #include "SourceTreeWidget.h"
 #include "AsyncHelper.h"
+#include "DiffViewer.h"
 #include "RepoManager.h"
 #include "ThemeColors.h"
 #include "git/GitService.h"
 #include "git/StashUtils.h"
 
 #include <QApplication>
+#include <QClipboard>
 #include <QDesktopServices>
+#include <QDialog>
 #include <QDir>
 #include <QDrag>
 #include <QFont>
@@ -370,6 +373,18 @@ void SourceTreeWidget::checkoutCommit(const QString &oid) {
         });
 }
 
+void SourceTreeWidget::showStashDiff(const QString &ref, const QString &patch) {
+    auto *dlg = new QDialog(this);
+    dlg->setAttribute(Qt::WA_DeleteOnClose);
+    dlg->setWindowTitle("Stash diff — " + ref.trimmed().left(60));
+    dlg->resize(700, 500);
+    auto *layout = new QVBoxLayout(dlg);
+    auto *viewer = new DiffViewer(dlg);
+    viewer->setDiff(patch);
+    layout->addWidget(viewer);
+    dlg->show();
+}
+
 bool SourceTreeWidget::eventFilter(QObject *watched, QEvent *event) {
     if (watched != m_tree->viewport())
         return QWidget::eventFilter(watched, event);
@@ -443,7 +458,15 @@ void SourceTreeWidget::onContextMenu(const QPoint &pos) {
     if (kind == "local-branch") {
         const QString current = m_repos->headState().branch;
         menu.addAction("Checkout", [&] { checkoutBranch(ref); });
-        menu.addAction("Fast-forward to origin", [&] { fastForward(ref); });
+        menu.addAction("Fast-forward to origin", [&] {
+            fastForward(ref);
+            emit statusMessage("Fast-forward complete", false);
+        });
+        menu.addAction("Pull", [&] { emit pullRequested(); });
+        menu.addAction("Push", [&] { emit pushRequested(); });
+        menu.addAction("Create pull request", [&] { createPr(ref); });
+        menu.addSeparator();
+        menu.addAction("New Branch…", [&] { emit addBranchRequested(); });
         if (!current.isEmpty() && current != ref)
             menu.addAction("Merge into current (" + current + ")",
                            [&] { mergeBranches(ref, current); });
@@ -454,14 +477,23 @@ void SourceTreeWidget::onContextMenu(const QPoint &pos) {
             mergeInto->addAction(b, [&, b] { mergeBranches(ref, b); });
         }
         menu.addAction("Rename…", [&] { renameBranch(ref); });
-        menu.addAction("Create pull request", [&] { createPr(ref); });
         menu.addAction("Delete…", [&] { deleteBranch(ref, false); });
+        menu.addSeparator();
+        menu.addAction("Copy Branch Name", [&, ref] {
+            QApplication::clipboard()->setText(ref);
+        });
         menu.exec(global);
     } else if (kind == "remote-branch") {
         menu.addAction("Checkout", [&] { checkoutBranch(ref); });
         menu.addAction("Delete remote…", [&] { deleteBranch(ref, true); });
         menu.exec(global);
     } else if (kind == "stash") {
+        menu.addAction("View diff", [&] {
+            runBackground<QString>(
+                this, [this, ref] { return m_git->stashDiff(ref); },
+                [&](const QString &patch) { showStashDiff(ref, patch); },
+                [&](const QString &e) { emit statusMessage(e, true); });
+        });
         menu.addAction("Apply (keep)", [&] {
             runBackgroundVoid(
                 this, [this, ref] { m_git->applyStash(ref); }, [&] { emit stashChanged(); },

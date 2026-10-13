@@ -21,6 +21,8 @@ public:
 
 private slots:
     void saveIdentity();
+    void reloadIdentity();
+    QString identityRepoScope() const;
     void connectProvider(const QString &provider);
     void disconnectProvider(const QString &provider);
     void browseSshKey(bool repoScope);
@@ -52,6 +54,7 @@ private:
     class QLineEdit *m_nameEdit = nullptr;
     class QLineEdit *m_emailEdit = nullptr;
     class QLabel *m_identityState = nullptr;
+    class QComboBox *m_identityScope = nullptr;
     QMap<QString, ProviderRow> m_providerRows;
     class QLineEdit *m_globalKey = nullptr;
     class QLineEdit *m_repoKey = nullptr;

@@ -143,7 +143,7 @@ QString ThemeManager::stylesheet(bool dark) {
         "QPushButton.primary:hover { background: #1d4ed8; }"
         "QPushButton.danger { color: #e05555; }"
         "QPushButton.tab { border: 1px solid %4; border-radius: 12px;"
-        " padding: 5px 12px; background: %8; font-weight: 400; }"
+        " padding: 4px 10px; background: %8; font-weight: 400; font-size: 12px; }"
         "QPushButton.tab:hover { background: %5; }"
         "QPushButton.tab:checked { background: %12; border-color: #2563eb;"
         " font-weight: 600; }"

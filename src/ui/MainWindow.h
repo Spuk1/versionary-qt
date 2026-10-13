@@ -9,6 +9,7 @@ class GitService;
 class HistoryWidget;
 class IdentityStore;
 class OAuthClient;
+class QTabWidget;
 class RepoHeaderWidget;
 class RepoManager;
 class RepoTabBar;
@@ -30,6 +31,8 @@ private slots:
     void onRepoSelected(int index);
     void openRepository();
     void doFetch();
+    void setupMenuBar();
+    void showAbout();
     void doPull();
     void doPush();
     void pushPlain();
@@ -39,7 +42,9 @@ private slots:
     void openCloneDialog();
     void openSettings();
     void showStatus(const QString &message, bool error);
+    void showOpError(const QString &e);
     void setBusy(bool busy);
+    void watchBusyTimeout();
     void refreshAfterBranchChange();
     void checkFocusFetch();
 
@@ -59,10 +64,12 @@ private:
 
     RepoHeaderWidget *m_header;
     RepoTabBar *m_tabs;
+    QTabWidget *m_rightTabs = nullptr;
     SourceTreeWidget *m_sourceTree;
     StagingWidget *m_staging;
     HistoryWidget *m_history;
     int m_busyCount = 0;
     qint64 m_lastFocusFetch = 0;
+    qint64 m_busySince = 0;
     QString m_headerAction;
 };

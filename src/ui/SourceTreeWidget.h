@@ -24,6 +24,9 @@ signals:
     void branchesChanged();
     void stashChanged();
     void busyChanged(bool busy);
+    void pullRequested();
+    void pushRequested();
+    void addBranchRequested();
 
 protected:
     bool eventFilter(QObject *watched, QEvent *event) override;
@@ -48,6 +51,7 @@ private:
     void fastForward(const QString &branch);
     void createPr(const QString &branch);
     void checkoutCommit(const QString &oid);
+    void showStashDiff(const QString &ref, const QString &patch);
 
     GitService *m_git;
     RepoManager *m_repos;

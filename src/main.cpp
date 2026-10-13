@@ -8,6 +8,7 @@ int main(int argc, char *argv[]) {
     QApplication app(argc, argv);
     app.setOrganizationName("Versionary");
     app.setApplicationName("Versionary");
+    app.setApplicationVersion(VERSIONARY_VERSION);
     // Pinned look: platform themes (qt6ct, Breeze, …) must not override
     // style or fonts, otherwise colors and metrics diverge per system.
     app.setStyle(QStyleFactory::create("Fusion"));

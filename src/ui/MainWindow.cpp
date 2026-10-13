@@ -5,6 +5,7 @@
 #include "CloneDialog.h"
 #include "HistoryWidget.h"
 #include "OnboardingDialog.h"
+#include "OperationProgressDialog.h"
 #include "RepoHeaderWidget.h"
 #include "RepoManager.h"
 #include "RepoTabBar.h"
@@ -24,6 +25,9 @@
 #include <QCoreApplication>
 #include <QDateTime>
 #include <QFileDialog>
+#include <QMenuBar>
+#include <QMessageBox>
+#include <QPointer>
 #include <QThreadPool>
 #include <QInputDialog>
 #include <QMessageBox>
@@ -50,6 +54,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
 
     m_themes->applyTo(qobject_cast<QApplication *>(QCoreApplication::instance()));
     m_themes->startWatching(qobject_cast<QApplication *>(QCoreApplication::instance()));
+    setupMenuBar();
 
     m_header = new RepoHeaderWidget(m_repos, this);
     auto *toolbar = new ActionToolBar(m_repos, m_header, this);
@@ -67,10 +72,10 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
     centerLayout->addWidget(m_tabs);
     auto *splitter = new QSplitter(Qt::Horizontal, center);
     splitter->addWidget(m_sourceTree);
-    auto *rightTabs = new QTabWidget(center);
-    rightTabs->addTab(m_staging, "Changes");
-    rightTabs->addTab(m_history, "History");
-    splitter->addWidget(rightTabs);
+    m_rightTabs = new QTabWidget(center);
+    m_rightTabs->addTab(m_staging, "Changes");
+    m_rightTabs->addTab(m_history, "History");
+    splitter->addWidget(m_rightTabs);
     splitter->setStretchFactor(0, 1);
     splitter->setStretchFactor(1, 3);
     splitter->setSizes({260, 1000});
@@ -107,9 +112,18 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
             &MainWindow::refreshAfterBranchChange);
     connect(m_sourceTree, &SourceTreeWidget::stashChanged, this,
             &MainWindow::refreshAfterBranchChange);
+    connect(m_sourceTree, &SourceTreeWidget::pullRequested, this, &MainWindow::doPull);
+    connect(m_sourceTree, &SourceTreeWidget::pushRequested, this, &MainWindow::doPush);
+    connect(m_sourceTree, &SourceTreeWidget::addBranchRequested, this,
+            &MainWindow::openBranchDialog);
     connect(m_history, &HistoryWidget::branchesChanged, this,
             &MainWindow::refreshAfterBranchChange);
     connect(m_staging, &StagingWidget::committed, this, &MainWindow::refreshAfterBranchChange);
+    connect(m_staging, &StagingWidget::operationFinished, this,
+            &MainWindow::refreshAfterBranchChange);
+    connect(m_staging, &StagingWidget::unstagedCountChanged, this, [&](int n) {
+        m_rightTabs->setTabText(0, n > 0 ? QString("Changes (%1)").arg(n) : "Changes");
+    });
     connect(qApp, &QApplication::focusChanged, this, &MainWindow::checkFocusFetch);
 
     m_repos->load();
@@ -125,6 +139,10 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
 
     // Deferred startup fetch, mirroring GitContext's 30s timer (shortened).
     QTimer::singleShot(30000, this, &MainWindow::doFetch);
+    auto *busyWatchdog = new QTimer(this);
+    busyWatchdog->setInterval(60000);
+    connect(busyWatchdog, &QTimer::timeout, this, &MainWindow::watchBusyTimeout);
+    busyWatchdog->start();
 }
 
 MainWindow::~MainWindow() {
@@ -191,16 +209,26 @@ void MainWindow::doFetch() {
         return;
     m_headerAction = "fetching";
     setBusy(true);
+    QPointer<OperationProgressDialog> progress = new OperationProgressDialog("Fetching", this);
+    auto progCb = GitService::ProgressCallback(
+        [progress](const GitProgress &p) { if (progress) progress->reportProgress(p); });
+    auto cancel = progress->cancelFlag();
     runBackgroundVoid(
-        this, [this] { m_git->fetch(); },
-        [&] {
+        this, [this, progCb, cancel] { m_git->fetch(progCb, cancel); },
+        [this, progress] {
+            if (progress) {
+                progress->close();
+                progress->deleteLater();
+            }
             setBusy(false);
             refreshHead();
             m_sourceTree->refresh();
         },
-        [&](const QString &e) {
+        [this, progress](const QString &e) {
+            progress->close();
+            progress->deleteLater();
             setBusy(false);
-            showStatus(e, true);
+            showOpError(e);
         });
 }
 
@@ -209,15 +237,25 @@ void MainWindow::doPull() {
         return;
     m_headerAction = "pulling";
     setBusy(true);
+    QPointer<OperationProgressDialog> progress = new OperationProgressDialog("Pulling", this);
+    auto progCb = GitService::ProgressCallback(
+        [progress](const GitProgress &p) { if (progress) progress->reportProgress(p); });
+    auto cancel = progress->cancelFlag();
     runBackgroundVoid(
-        this, [this] { m_git->pull(); },
-        [&] {
+        this, [this, progCb, cancel] { m_git->pull(progCb, cancel); },
+        [this, progress] {
+            if (progress) {
+                progress->close();
+                progress->deleteLater();
+            }
             setBusy(false);
             refreshAfterBranchChange();
         },
-        [&](const QString &e) {
+        [this, progress](const QString &e) {
+            progress->close();
+            progress->deleteLater();
             setBusy(false);
-            showStatus(e, true);
+            showOpError(e);
         });
 }
 
@@ -252,30 +290,50 @@ void MainWindow::doPush() {
 void MainWindow::pushPlain() {
     m_headerAction = "pushing";
     setBusy(true);
+    QPointer<OperationProgressDialog> progress = new OperationProgressDialog("Pushing", this);
+    auto progCb = GitService::ProgressCallback(
+        [progress](const GitProgress &p) { if (progress) progress->reportProgress(p); });
+    auto cancel = progress->cancelFlag();
     runBackgroundVoid(
-        this, [this] { m_git->push(false); },
-        [&] {
+        this, [this, progCb, cancel] { m_git->push(false, progCb, cancel); },
+        [this, progress] {
+            if (progress) {
+                progress->close();
+                progress->deleteLater();
+            }
             setBusy(false);
             refreshHead();
         },
-        [&](const QString &e) {
+        [this, progress](const QString &e) {
+            progress->close();
+            progress->deleteLater();
             setBusy(false);
-            showStatus(e, true);
+            showOpError(e);
         });
 }
 
 void MainWindow::pushWithUpstream() {
     m_headerAction = "pushing";
     setBusy(true);
+    QPointer<OperationProgressDialog> progress = new OperationProgressDialog("Pushing", this);
+    auto progCb = GitService::ProgressCallback(
+        [progress](const GitProgress &p) { if (progress) progress->reportProgress(p); });
+    auto cancel = progress->cancelFlag();
     runBackgroundVoid(
-        this, [this] { m_git->push(true); },
-        [&] {
+        this, [this, progCb, cancel] { m_git->push(true, progCb, cancel); },
+        [this, progress] {
+            if (progress) {
+                progress->close();
+                progress->deleteLater();
+            }
             setBusy(false);
             refreshHead();
         },
-        [&](const QString &e) {
+        [this, progress](const QString &e) {
+            progress->close();
+            progress->deleteLater();
             setBusy(false);
-            showStatus(e, true);
+            showOpError(e);
         });
 }
 
@@ -343,15 +401,25 @@ void MainWindow::openCloneDialog() {
     const int workspace = dlg.workspace();
     m_headerAction = "cloning";
     setBusy(true);
+    QPointer<OperationProgressDialog> progress = new OperationProgressDialog("Cloning", this);
+    auto progCb = GitService::ProgressCallback(
+        [progress](const GitProgress &p) { if (progress) progress->reportProgress(p); });
+    auto cancel = progress->cancelFlag();
     runBackground<QString>(
-        this, [this, url, dest, account] { return m_git->cloneRepo(url, dest, account); },
-        [&](const QString &path) {
+        this, [this, url, dest, account, progCb, cancel] {
+            return m_git->cloneRepo(url, dest, account, progCb, cancel);
+        },
+        [this, progress, workspace](const QString &path) {
+            progress->close();
+            progress->deleteLater();
             setBusy(false);
             m_repos->addRepository(path, workspace);
         },
-        [&](const QString &e) {
+        [this, progress](const QString &e) {
+            progress->close();
+            progress->deleteLater();
             setBusy(false);
-            showStatus(e, true);
+            showOpError(e);
         });
 }
 
@@ -361,19 +429,89 @@ void MainWindow::openSettings() {
     dlg.exec();
 }
 
+void MainWindow::setupMenuBar() {
+    auto *general = menuBar()->addMenu("&General");
+    QAction *cloneAct = general->addAction("&Clone…");
+    cloneAct->setShortcut(QKeySequence("Ctrl+Shift+C"));
+    connect(cloneAct, &QAction::triggered, this, &MainWindow::openCloneDialog);
+    QAction *openAct = general->addAction("&Open…");
+    openAct->setShortcut(QKeySequence("Ctrl+O"));
+    connect(openAct, &QAction::triggered, this, &MainWindow::openRepository);
+    QAction *closeAct = general->addAction("&Close Repository");
+    closeAct->setShortcut(QKeySequence("Ctrl+W"));
+    connect(closeAct, &QAction::triggered, this, [&] {
+        m_repos->removeRepository(m_repos->selectedIndex());
+    });
+    general->addSeparator();
+    QAction *quitAct = general->addAction("&Quit");
+    quitAct->setShortcut(QKeySequence("Ctrl+Q"));
+    connect(quitAct, &QAction::triggered, this, &QWidget::close);
+
+    auto *view = menuBar()->addMenu("&View");
+    QAction *fullAct = view->addAction("Toggle &Full Screen");
+    fullAct->setShortcut(QKeySequence("F11"));
+    connect(fullAct, &QAction::triggered, this, [&] {
+        setWindowState(windowState() ^ Qt::WindowFullScreen);
+    });
+    QAction *changesAct = view->addAction("Show &Changes");
+    changesAct->setShortcut(QKeySequence("Ctrl+1"));
+    connect(changesAct, &QAction::triggered, this, [&] { m_rightTabs->setCurrentIndex(0); });
+    QAction *historyAct = view->addAction("Show &History");
+    historyAct->setShortcut(QKeySequence("Ctrl+2"));
+    connect(historyAct, &QAction::triggered, this, [&] { m_rightTabs->setCurrentIndex(1); });
+
+    auto *help = menuBar()->addMenu("&Help");
+    QAction *aboutAct = help->addAction("&About Versionary");
+    connect(aboutAct, &QAction::triggered, this, &MainWindow::showAbout);
+}
+
+void MainWindow::showAbout() {
+    QMessageBox::about(
+        this, "About Versionary",
+        "<h3>Versionary " + QApplication::applicationVersion() + "</h3>"
+        "<p>A fast, native Git GUI client built with Qt.</p>"
+        "<p><a href=\"https://github.com/spuk1/versionary\">"
+        "github.com/spuk1/versionary</a></p>");
+}
+
 void MainWindow::showStatus(const QString &message, bool error) {
     statusBar()->showMessage(message, error ? 8000 : 4000);
     if (error)
         QMessageBox::warning(this, "Versionary", message);
 }
 
+void MainWindow::showOpError(const QString &e) {
+    if (e == "Cancelled") {
+        statusBar()->showMessage("Cancelled", 4000);
+        return;
+    }
+    showStatus(e, true);
+}
+
 void MainWindow::setBusy(bool busy) {
     m_busyCount += busy ? 1 : -1;
     if (m_busyCount < 0)
         m_busyCount = 0;
-    if (m_busyCount == 0)
+    if (m_busyCount == 0) {
         m_headerAction.clear();
+    } else if (m_busySince == 0) {
+        m_busySince = QDateTime::currentMSecsSinceEpoch();
+    }
     m_header->setBusy(m_busyCount > 0, m_headerAction);
+}
+
+// Watchdog: if busy state sticks far beyond any legitimate operation,
+// assume a completion signal was lost and release the UI instead of
+// wedging it with an infinite animation.
+void MainWindow::watchBusyTimeout() {
+    if (m_busyCount > 0 && m_busySince > 0
+        && QDateTime::currentMSecsSinceEpoch() - m_busySince > 10 * 60 * 1000) {
+        m_busyCount = 0;
+        m_busySince = 0;
+        m_headerAction.clear();
+        m_header->setBusy(false);
+        statusBar()->showMessage("A stuck operation was cleared.", 8000);
+    }
 }
 
 void MainWindow::refreshAfterBranchChange() {
@@ -384,10 +522,13 @@ void MainWindow::refreshAfterBranchChange() {
 }
 
 void MainWindow::checkFocusFetch() {
+    if (!isActiveWindow())
+        return; // never fetch while another application is focused
     const qint64 now = QDateTime::currentMSecsSinceEpoch();
     if (now - m_lastFocusFetch < 60000)
         return;
+    if (m_repos->selectedPath().isEmpty() || m_header->isBusy())
+        return;
     m_lastFocusFetch = now;
-    if (!m_repos->selectedPath().isEmpty() && !m_header->isBusy())
-        doFetch();
+    doFetch();
 }
