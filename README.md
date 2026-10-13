@@ -51,6 +51,19 @@ sudo scripts/install.sh /usr     # installs to /usr
 This installs the binary, desktop entry, icons, and AppStream metadata.
 OAuth keys are read from `~/.Versionary/.env` (same names as `.env`).
 
+### OAuth credentials: env, baked, or file
+
+Resolution order (first hit wins):
+
+1. Process environment (`GITHUB_CLIENT_ID`, …) — highest priority.
+2. Build-time baked values for packaged builds:
+   `cmake -DVERSIONARY_GITHUB_CLIENT_ID=… […]`. The AUR `PKGBUILD`
+   reads them from the environment or a dotenv-style `.env` placed next
+   to it (never packaged). Never commit real secrets.
+3. `.env` lookup: next to the binary, current directory, then
+   `~/.Versionary/.env` — this is how dev builds and the Flatpak find
+   keys (`install.sh` seeds `~/.Versionary/.env` from `./.env` once).
+
 ### Arch Linux (AUR)
 
 ```bash

@@ -1,5 +1,16 @@
 cmake_minimum_required(VERSION 3.21)
 project(Versionary VERSION 1.0.0 LANGUAGES CXX)
+add_compile_definitions(VERSIONARY_VERSION="${PROJECT_VERSION}")
+
+# Optional build-time OAuth credentials (packagers). Exported environment
+# and ~/.Versionary/.env still take precedence at runtime.
+foreach(KEY GITHUB_CLIENT_ID GITHUB_CLIENT_SECRET
+            BITBUCKET_CLIENT_ID BITBUCKET_CLIENT_SECRET
+            GITLAB_CLIENT_ID GITLAB_CLIENT_SECRET)
+  if(VERSIONARY_${KEY})
+    add_compile_definitions(VERSIONARY_${KEY}="${VERSIONARY_${KEY}}")
+  endif()
+endforeach()
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -37,6 +48,10 @@ add_library(versionary_core STATIC
     src/git/GitService.cpp
     src/git/GitService.h
     src/git/GitServiceHistory.cpp
+    src/git/GitServiceAdvanced.cpp
+    src/git/ProgressParse.cpp
+    src/git/ProgressParse.h
+    src/git/OperationState.h
     src/net/OAuthClient.cpp
     src/net/OAuthClient.h
     src/net/ApiClient.cpp
@@ -66,6 +81,8 @@ add_library(versionary_core STATIC
     src/ui/SourceTreeWidget.h
     src/ui/StagingWidget.cpp
     src/ui/StagingWidget.h
+    src/ui/SideBySideViewer.cpp
+    src/ui/SideBySideViewer.h
     src/ui/FileListDelegate.cpp
     src/ui/FileListDelegate.h
     src/ui/HistoryWidget.cpp
@@ -80,6 +97,14 @@ add_library(versionary_core STATIC
     src/ui/BranchDialog.h
     src/ui/CloneDialog.cpp
     src/ui/CloneDialog.h
+    src/ui/ConflictDialog.cpp
+    src/ui/ConflictDialog.h
+    src/ui/OperationProgressDialog.cpp
+    src/ui/OperationProgressDialog.h
+    src/ui/BlameDialog.cpp
+    src/ui/BlameDialog.h
+    src/ui/FileHistoryDialog.cpp
+    src/ui/FileHistoryDialog.h
     src/ui/SettingsDialog.cpp
     src/ui/SettingsDialog.h
     src/ui/OnboardingDialog.cpp
