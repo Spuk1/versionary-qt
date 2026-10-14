@@ -398,7 +398,7 @@ void StagingWidget::loadChanges() {
             if (!m_currentFile.isEmpty())
                 loadDiffFor(m_currentFile, m_currentBucket);
         },
-        [&](const QString &err) {
+        [this](const QString &err) {
             emit busyChanged(false);
             emit statusMessage(err, true);
         });
@@ -439,12 +439,12 @@ void StagingWidget::continueOperation() {
             else if (op.rebasing)
                 m_git->rebaseContinue();
         },
-        [&] {
+        [this] {
             emit busyChanged(false);
             loadChanges();
             emit operationFinished();
         },
-        [&](const QString &e) {
+        [this](const QString &e) {
             emit busyChanged(false);
             emit statusMessage(e, true);
         });
@@ -456,12 +456,12 @@ void StagingWidget::skipOperation() {
     emit busyChanged(true);
     runBackgroundVoid(
         this, [this] { m_git->rebaseSkip(); },
-        [&] {
+        [this] {
             emit busyChanged(false);
             loadChanges();
             emit operationFinished();
         },
-        [&](const QString &e) {
+        [this](const QString &e) {
             emit busyChanged(false);
             emit statusMessage(e, true);
         });
@@ -481,12 +481,12 @@ void StagingWidget::abortOperation() {
             else if (op.rebasing)
                 m_git->rebaseAbort();
         },
-        [&] {
+        [this] {
             emit busyChanged(false);
             loadChanges();
             emit operationFinished();
         },
-        [&](const QString &e) {
+        [this](const QString &e) {
             emit busyChanged(false);
             emit statusMessage(e, true);
         });
@@ -532,11 +532,11 @@ void StagingWidget::stageOrUnstageDoubleClicked(QListWidget *list, QListWidgetIt
             else
                 m_git->stageFile(file);
         },
-        [&] {
+        [this] {
             emit busyChanged(false);
             loadChanges();
         },
-        [&](const QString &e) {
+        [this](const QString &e) {
             emit busyChanged(false);
             emit statusMessage(e, true);
         });
@@ -575,11 +575,11 @@ void StagingWidget::stageSingleFile(const QString &file) {
     emit busyChanged(true);
     runBackgroundVoid(
         this, [this, file] { m_git->stageFile(file); },
-        [&] {
+        [this] {
             emit busyChanged(false);
             loadChanges();
         },
-        [&](const QString &e) {
+        [this](const QString &e) {
             emit busyChanged(false);
             emit statusMessage(e, true);
         });
@@ -589,11 +589,11 @@ void StagingWidget::unstageSingleFile(const QString &file) {
     emit busyChanged(true);
     runBackgroundVoid(
         this, [this, file] { m_git->unstageFile(file); },
-        [&] {
+        [this] {
             emit busyChanged(false);
             loadChanges();
         },
-        [&](const QString &e) {
+        [this](const QString &e) {
             emit busyChanged(false);
             emit statusMessage(e, true);
         });
@@ -610,11 +610,11 @@ void StagingWidget::discardSingleFile(const QString &file) {
     emit busyChanged(true);
     runBackgroundVoid(
         this, [this, file] { m_git->discardFile(file); },
-        [&] {
+        [this] {
             emit busyChanged(false);
             loadChanges();
         },
-        [&](const QString &e) {
+        [this](const QString &e) {
             emit busyChanged(false);
             emit statusMessage(e, true);
         });
@@ -630,7 +630,7 @@ void StagingWidget::openBlame(const QString &file) {
             dlg->setAttribute(Qt::WA_DeleteOnClose);
             dlg->show();
         },
-        [&](const QString &e) {
+        [this](const QString &e) {
             emit busyChanged(false);
             emit statusMessage(e, true);
         });
@@ -650,7 +650,7 @@ void StagingWidget::openFileHistory(const QString &file) {
             dlg->setAttribute(Qt::WA_DeleteOnClose);
             dlg->show();
         },
-        [&](const QString &e) {
+        [this](const QString &e) {
             emit busyChanged(false);
             emit statusMessage(e, true);
         });
@@ -682,7 +682,7 @@ void StagingWidget::loadDiffFor(const QString &file, const QString &bucket) {
             m_sideDiff->setLanguageFromFile(file);
             updateDiffHeader();
         },
-        [&](const QString &err) { emit statusMessage(err, true); });
+        [this](const QString &err) { emit statusMessage(err, true); });
 }
 
 void StagingWidget::stageChecked() {
@@ -695,11 +695,11 @@ void StagingWidget::stageChecked() {
             for (const QString &f : files)
                 m_git->stageFile(f);
         },
-        [&] {
+        [this] {
             emit busyChanged(false);
             loadChanges();
         },
-        [&](const QString &e) {
+        [this](const QString &e) {
             emit busyChanged(false);
             emit statusMessage(e, true);
         });
@@ -712,11 +712,11 @@ void StagingWidget::stageAll() {
             for (const QString &f : m_git->listChanges())
                 m_git->stageFile(f);
         },
-        [&] {
+        [this] {
             emit busyChanged(false);
             loadChanges();
         },
-        [&](const QString &e) {
+        [this](const QString &e) {
             emit busyChanged(false);
             emit statusMessage(e, true);
         });
@@ -732,11 +732,11 @@ void StagingWidget::unstageChecked() {
             for (const QString &f : files)
                 m_git->unstageFile(f);
         },
-        [&] {
+        [this] {
             emit busyChanged(false);
             loadChanges();
         },
-        [&](const QString &e) {
+        [this](const QString &e) {
             emit busyChanged(false);
             emit statusMessage(e, true);
         });
@@ -766,11 +766,11 @@ void StagingWidget::discardChecked() {
                 for (const QString &f : regular)
                     m_git->discardFile(f);
             },
-            [&] {
+            [this] {
                 emit busyChanged(false);
                 loadChanges();
             },
-            [&](const QString &e) {
+            [this](const QString &e) {
                 emit busyChanged(false);
                 emit statusMessage(e, true);
             });
@@ -820,7 +820,7 @@ void StagingWidget::resetSubmodulesChecked(const QStringList &subs,
             loadChanges();
             then();
         },
-        [&](const QString &e) {
+        [this](const QString &e) {
             emit busyChanged(false);
             emit statusMessage(e, true);
         });
@@ -849,16 +849,17 @@ void StagingWidget::doCommit() {
             else
                 m_git->commit(msg);
         },
-        [&] {
+        [this, msg] {
             emit busyChanged(false);
             addToMessageHistory(msg);
-            m_message->lineEdit()->clear();
+            if (QLineEdit *editor = m_message->lineEdit())
+                editor->clear();
             if (m_amendBox)
                 m_amendBox->setChecked(false);
             loadChanges();
             emit committed();
         },
-        [&](const QString &e) {
+        [this](const QString &e) {
             emit busyChanged(false);
             emit statusMessage(e, true);
         });
@@ -868,13 +869,13 @@ void StagingWidget::doUndo() {
     emit busyChanged(true);
     runBackgroundVoid(
         this, [this] { m_git->undoLastCommit(); },
-        [&] {
+        [this] {
             emit busyChanged(false);
             loadChanges();
             emit committed();
             emit statusMessage("Undid last commit (changes kept staged).", false);
         },
-        [&](const QString &e) {
+        [this](const QString &e) {
             emit busyChanged(false);
             emit statusMessage(e, true);
         });
@@ -890,7 +891,7 @@ void StagingWidget::stageSelectedLines() {
     const QString file = m_currentFile;
     runBackgroundVoid(
         this, [this, sel, patch, file] { m_git->stageLines(file, sel, patch); },
-        [&] { loadChanges(); }, [&](const QString &e) { emit statusMessage(e, true); });
+        [this] { loadChanges(); }, [this](const QString &e) { emit statusMessage(e, true); });
 }
 
 void StagingWidget::discardSelectedLines() {
@@ -903,7 +904,7 @@ void StagingWidget::discardSelectedLines() {
     const QString file = m_currentFile;
     runBackgroundVoid(
         this, [this, sel, patch, file] { m_git->discardLines(file, sel, patch); },
-        [&] { loadChanges(); }, [&](const QString &e) { emit statusMessage(e, true); });
+        [this] { loadChanges(); }, [this](const QString &e) { emit statusMessage(e, true); });
 }
 
 void StagingWidget::unstageSelectedLines() {
@@ -916,5 +917,5 @@ void StagingWidget::unstageSelectedLines() {
     const QString file = m_currentFile;
     runBackgroundVoid(
         this, [this, sel, patch, file] { m_git->unstageLines(file, sel, patch); },
-        [&] { loadChanges(); }, [&](const QString &e) { emit statusMessage(e, true); });
+        [this] { loadChanges(); }, [this](const QString &e) { emit statusMessage(e, true); });
 }

@@ -251,7 +251,7 @@ void MainWindow::refreshHead() {
                                                 ? "—"
                                                 : parseAheadBehindResult(res.second));
         },
-        [&](const QString &e) { showStatus(e, true); });
+        [this](const QString &e) { showStatus(e, true); });
 }
 
 QString MainWindow::formatAheadBehind(int ahead, int behind) {
@@ -341,8 +341,8 @@ void MainWindow::openRepository() {
         return;
     runBackground<QString>(
         this, [this, dir] { return GitService::toplevelOf(dir); },
-        [&](const QString &top) { m_repos->addRepository(top); },
-        [&](const QString &) { showStatus("Not a Git repository.", true); });
+        [this](const QString &top) { m_repos->addRepository(top); },
+        [this](const QString &) { showStatus("Not a Git repository.", true); });
 }
 
 void MainWindow::openQuickOpen() {
@@ -382,8 +382,10 @@ void MainWindow::doFetch() {
             m_sourceTree->refresh();
         },
         [this, progress](const QString &e) {
-            progress->close();
-            progress->deleteLater();
+            if (progress) {
+                progress->close();
+                progress->deleteLater();
+            }
             setBusy(false);
             showOpError(e);
         });
@@ -506,8 +508,10 @@ void MainWindow::doPull() {
             refreshAfterBranchChange();
         },
         [this, progress](const QString &e) {
-            progress->close();
-            progress->deleteLater();
+            if (progress) {
+                progress->close();
+                progress->deleteLater();
+            }
             setBusy(false);
             showOpError(e);
         });
@@ -522,7 +526,7 @@ void MainWindow::doPush() {
     // locale-proof, unlike matching git's (translated) error text.
     runBackground<bool>(
         this, [this] { return m_git->currentBranchHasUpstream(); },
-        [&](bool hasUpstream) {
+        [this](bool hasUpstream) {
             if (!hasUpstream) {
                 setBusy(false);
                 if (QMessageBox::question(this, "Set Upstream?",
@@ -535,7 +539,7 @@ void MainWindow::doPush() {
             }
             pushPlain();
         },
-        [&](const QString &e) {
+        [this](const QString &e) {
             setBusy(false);
             showStatus(e, true);
         });
@@ -559,8 +563,10 @@ void MainWindow::pushPlain() {
             refreshHead();
         },
         [this, progress](const QString &e) {
-            progress->close();
-            progress->deleteLater();
+            if (progress) {
+                progress->close();
+                progress->deleteLater();
+            }
             setBusy(false);
             showOpError(e);
         });
@@ -584,8 +590,10 @@ void MainWindow::pushWithUpstream() {
             refreshHead();
         },
         [this, progress](const QString &e) {
-            progress->close();
-            progress->deleteLater();
+            if (progress) {
+                progress->close();
+                progress->deleteLater();
+            }
             setBusy(false);
             showOpError(e);
         });
@@ -596,7 +604,7 @@ void MainWindow::openStashDialog() {
         return;
     runBackground<QStringList>(
         this, [this] { return m_git->listChanges(); },
-        [&](const QStringList &files) {
+        [this](const QStringList &files) {
             StashDialog dlg(files, this);
             if (dlg.exec() != QDialog::Accepted)
                 return;
@@ -607,17 +615,17 @@ void MainWindow::openStashDialog() {
             setBusy(true);
             runBackgroundVoid(
                 this, [this, msg, checked] { m_git->stashPush(msg, checked); },
-                [&] {
+                [this] {
                     setBusy(false);
                     m_staging->refresh();
                     m_sourceTree->refresh();
                 },
-                [&](const QString &e) {
+                [this](const QString &e) {
                     setBusy(false);
                     showStatus(e, true);
                 });
         },
-        [&](const QString &e) { showStatus(e, true); });
+        [this](const QString &e) { showStatus(e, true); });
 }
 
 void MainWindow::openBranchDialog() {
@@ -635,11 +643,11 @@ void MainWindow::openBranchDialog() {
     setBusy(true);
     runBackgroundVoid(
         this, [this, name, checkout] { m_git->addBranch(name, checkout); },
-        [&] {
+        [this] {
             setBusy(false);
             refreshAfterBranchChange();
         },
-        [&](const QString &e) {
+        [this](const QString &e) {
             setBusy(false);
             showStatus(e, true);
         });
@@ -664,14 +672,18 @@ void MainWindow::openCloneDialog() {
             return m_git->cloneRepo(url, dest, account, progCb, cancel);
         },
         [this, progress, workspace](const QString &path) {
-            progress->close();
-            progress->deleteLater();
+            if (progress) {
+                progress->close();
+                progress->deleteLater();
+            }
             setBusy(false);
             m_repos->addRepository(path, workspace);
         },
         [this, progress](const QString &e) {
-            progress->close();
-            progress->deleteLater();
+            if (progress) {
+                progress->close();
+                progress->deleteLater();
+            }
             setBusy(false);
             showOpError(e);
         });

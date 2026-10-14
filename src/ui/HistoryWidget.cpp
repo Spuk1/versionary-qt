@@ -65,7 +65,7 @@ HistoryWidget::HistoryWidget(GitService *git, RepoManager *repos, QWidget *paren
     m_log->setMouseTracking(true);
     m_log->setContextMenuPolicy(Qt::CustomContextMenu);
     m_model = new CommitLogModel(this);
-    m_model->setLoader([&](int skip, int limit, const QString &q) {
+    m_model->setLoader([this](int skip, int limit, const QString &q) {
         return loadPage(skip, limit, q);
     });
     m_log->setModel(m_model);
@@ -238,13 +238,13 @@ void HistoryWidget::cherryPickSelected() {
     emit busyChanged(true);
     runBackgroundVoid(
         this, [this, oid] { m_git->cherryPick(oid); },
-        [&] {
+        [this, oid] {
             emit busyChanged(false);
             refresh();
             emit branchesChanged();
             emit statusMessage("Cherry-picked " + oid.left(7), false);
         },
-        [&](const QString &e) {
+        [this](const QString &e) {
             emit busyChanged(false);
             emit statusMessage(e + "\nResolve conflicts in Changes, then Continue.", true);
             refresh();
@@ -261,13 +261,13 @@ void HistoryWidget::revertSelected() {
     emit busyChanged(true);
     runBackgroundVoid(
         this, [this, oid] { m_git->revertCommit(oid); },
-        [&] {
+        [this, oid] {
             emit busyChanged(false);
             refresh();
             emit branchesChanged();
             emit statusMessage("Reverted " + oid.left(7), false);
         },
-        [&](const QString &e) {
+        [this](const QString &e) {
             emit busyChanged(false);
             emit statusMessage(e, true);
             refresh();
@@ -289,13 +289,13 @@ void HistoryWidget::rebaseOntoSelected() {
     emit busyChanged(true);
     runBackgroundVoid(
         this, [this, oid] { m_git->rebaseOnto(oid); },
-        [&] {
+        [this] {
             emit busyChanged(false);
             refresh();
             emit branchesChanged();
             emit statusMessage("Rebase complete.", false);
         },
-        [&](const QString &e) {
+        [this](const QString &e) {
             emit busyChanged(false);
             emit statusMessage(e + "\nResolve conflicts in Changes, then Continue.", true);
             refresh();
@@ -336,7 +336,7 @@ void HistoryWidget::loadDetails(const QString &oid) {
             }
             m_diff->setDiff({});
         },
-        [&](const QString &err) {
+        [this](const QString &err) {
             emit busyChanged(false);
             emit statusMessage(err, true);
         });
@@ -357,7 +357,7 @@ void HistoryWidget::onHistoryFileSelected() {
             m_diff->setDiff(patch);
             m_diff->setLanguageFromFile(path);
         },
-        [&](const QString &err) { emit statusMessage(err, true); });
+        [this](const QString &err) { emit statusMessage(err, true); });
 }
 
 void HistoryWidget::createTagForSelected() {
@@ -371,11 +371,11 @@ void HistoryWidget::createTagForSelected() {
     const QString oid = m_selectedOid;
     runBackgroundVoid(
         this, [this, oid, name] { m_git->createTag(name.trimmed(), oid); },
-        [&] {
+        [this] {
             emit statusMessage("Tag created.", false);
             refresh();
         },
-        [&](const QString &e) { emit statusMessage(e, true); });
+        [this](const QString &e) { emit statusMessage(e, true); });
 }
 
 void HistoryWidget::checkoutSelected() {
@@ -392,12 +392,12 @@ void HistoryWidget::checkoutSelected() {
     emit busyChanged(true);
     runBackgroundVoid(
         this, [this, oid] { m_git->checkoutRef(oid); },
-        [&] {
+        [this] {
             emit busyChanged(false);
             m_repos->setHeadState(m_git->headState());
             emit branchesChanged();
         },
-        [&](const QString &e) {
+        [this](const QString &e) {
             emit busyChanged(false);
             emit statusMessage(e, true);
         });

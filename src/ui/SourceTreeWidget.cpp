@@ -185,7 +185,7 @@ void SourceTreeWidget::loadAll() {
             buildSubmoduleItems(new QTreeWidgetItem(m_tree, {"Submodules"}));
             refreshBadges(path, local, remote);
         },
-        [&](const QString &err) {
+        [this](const QString &err) {
             emit busyChanged(false);
             emit statusMessage(err, true);
         });
@@ -235,7 +235,10 @@ void SourceTreeWidget::buildSubmoduleItems(QTreeWidgetItem *root) {
     root->setExpanded(root->childCount() > 0);
 }
 
-void SourceTreeWidget::onItemDoubleClicked(QTreeWidgetItem *item, int) {    const QString kind = item->data(0, kRoleKind).toString();
+void SourceTreeWidget::onItemDoubleClicked(QTreeWidgetItem *item, int) {
+    if (!item)
+        return;
+    const QString kind = item->data(0, kRoleKind).toString();
     const QString ref = item->data(0, kRoleRef).toString();
     if (kind == "local-branch" || kind == "remote-branch")
         checkoutBranch(ref);
@@ -258,13 +261,13 @@ void SourceTreeWidget::checkoutBranch(const QString &branch) {
     emit busyChanged(true);
     runBackgroundVoid(
         this, [this, branch] { m_git->checkoutRef(branch); },
-        [&] {
+        [this] {
             emit busyChanged(false);
             m_repos->setHeadState(m_git->headState());
             emit branchesChanged();
             refresh();
         },
-        [&](const QString &e) {
+        [this](const QString &e) {
             emit busyChanged(false);
             emit statusMessage(e, true);
         });
@@ -274,13 +277,13 @@ void SourceTreeWidget::mergeBranches(const QString &source, const QString &targe
     emit busyChanged(true);
     runBackgroundVoid(
         this, [this, source, target] { m_git->mergeBranch(source, target); },
-        [&] {
+        [this, source, target] {
             emit busyChanged(false);
             m_repos->setHeadState(m_git->headState());
             emit branchesChanged();
             emit statusMessage("Merged " + source + " into " + target, false);
         },
-        [&](const QString &e) {
+        [this](const QString &e) {
             emit busyChanged(false);
             emit statusMessage(e, true);
         });
@@ -297,11 +300,11 @@ void SourceTreeWidget::renameBranch(const QString &branch) {
         == QMessageBox::Yes;
     runBackgroundVoid(
         this, [this, branch, name, remote] { m_git->renameBranch(branch, name.trimmed(), remote); },
-        [&] {
+        [this] {
             emit branchesChanged();
             refresh();
         },
-        [&](const QString &e) { emit statusMessage(e, true); });
+        [this](const QString &e) { emit statusMessage(e, true); });
 }
 
 void SourceTreeWidget::deleteBranch(const QString &branch, bool remote) {
@@ -323,24 +326,24 @@ void SourceTreeWidget::deleteBranch(const QString &branch, bool remote) {
         this, [this, branch, remote, deleteRemoteToo] {
             m_git->deleteBranch(branch, remote, deleteRemoteToo);
         },
-        [&] {
+        [this] {
             emit branchesChanged();
             refresh();
         },
-        [&](const QString &e) { emit statusMessage(e, true); });
+        [this](const QString &e) { emit statusMessage(e, true); });
 }
 
 void SourceTreeWidget::fastForward(const QString &branch) {
     emit busyChanged(true);
     runBackgroundVoid(
         this, [this, branch] { m_git->fastForwardBranch(branch); },
-        [&] {
+        [this] {
             emit busyChanged(false);
             m_repos->setHeadState(m_git->headState());
             emit branchesChanged();
             refresh();
         },
-        [&](const QString &e) {
+        [this](const QString &e) {
             emit busyChanged(false);
             emit statusMessage(e, true);
         });
@@ -349,21 +352,21 @@ void SourceTreeWidget::fastForward(const QString &branch) {
 void SourceTreeWidget::createPr(const QString &branch) {
     runBackground<QString>(
         this, [this, branch] { return m_git->pullRequestUrl(branch); },
-        [&](const QString &url) { QDesktopServices::openUrl(QUrl(url)); },
-        [&](const QString &e) { emit statusMessage(e, true); });
+        [this](const QString &url) { QDesktopServices::openUrl(QUrl(url)); },
+        [this](const QString &e) { emit statusMessage(e, true); });
 }
 
 void SourceTreeWidget::checkoutCommit(const QString &oid) {
     emit busyChanged(true);
     runBackgroundVoid(
         this, [this, oid] { m_git->checkoutRef(oid); },
-        [&] {
+        [this] {
             emit busyChanged(false);
             m_repos->setHeadState(m_git->headState());
             emit branchesChanged();
             refresh();
         },
-        [&](const QString &e) {
+        [this](const QString &e) {
             emit busyChanged(false);
             emit statusMessage(e, true);
         });
@@ -386,7 +389,7 @@ void SourceTreeWidget::showStashDiff(const QString &ref, const QString &patch) {
                 if (guard)
                     guard->close();
             },
-            [&](const QString &e) { emit statusMessage(e, true); });
+            [this](const QString &e) { emit statusMessage(e, true); });
     });
     connect(dlg, &StashViewerDialog::dropRequested, this, [this, guard](const QString &r) {
         if (QMessageBox::question(this, "Drop Stash", "Drop this stash?") != QMessageBox::Yes)
@@ -399,7 +402,7 @@ void SourceTreeWidget::showStashDiff(const QString &ref, const QString &patch) {
                 if (guard)
                     guard->close();
             },
-            [&](const QString &e) { emit statusMessage(e, true); });
+            [this](const QString &e) { emit statusMessage(e, true); });
     });
     dlg->show();
     runBackground<CommitDetails>(
@@ -420,11 +423,11 @@ void SourceTreeWidget::showStashDiff(const QString &ref, const QString &patch) {
 void SourceTreeWidget::popStashRef(const QString &ref) {
     runBackgroundVoid(
         this, [this, ref] { m_git->popStash(ref); },
-        [&] {
+        [this] {
             emit stashChanged();
             refresh();
         },
-        [&](const QString &e) { emit statusMessage(e, true); });
+        [this](const QString &e) { emit statusMessage(e, true); });
 }
 
 void SourceTreeWidget::dropStashRef(const QString &ref) {
@@ -432,18 +435,18 @@ void SourceTreeWidget::dropStashRef(const QString &ref) {
         return;
     runBackgroundVoid(
         this, [this, ref] { m_git->dropStash(ref); },
-        [&] {
+        [this] {
             emit stashChanged();
             refresh();
         },
-        [&](const QString &e) { emit statusMessage(e, true); });
+        [this](const QString &e) { emit statusMessage(e, true); });
 }
 
 void SourceTreeWidget::applyStashFileRef(const QString &ref, const QString &file) {
     runBackgroundVoid(
         this, [this, ref, file] { m_git->applyStashFile(ref, file); },
-        [&] { emit statusMessage("Applied " + file, false); },
-        [&](const QString &e) { emit statusMessage(e, true); });
+        [this, file] { emit statusMessage("Applied " + file, false); },
+        [this](const QString &e) { emit statusMessage(e, true); });
 }
 
 bool SourceTreeWidget::eventFilter(QObject *watched, QEvent *event) {
@@ -552,13 +555,13 @@ void SourceTreeWidget::onContextMenu(const QPoint &pos) {
         menu.addAction("View diff", [&] {
             runBackground<QString>(
                 this, [this, ref] { return m_git->stashDiff(ref); },
-                [&](const QString &patch) { showStashDiff(ref, patch); },
-                [&](const QString &e) { emit statusMessage(e, true); });
+                [this, ref](const QString &patch) { showStashDiff(ref, patch); },
+                [this](const QString &e) { emit statusMessage(e, true); });
         });
         menu.addAction("Apply (keep)", [&] {
             runBackgroundVoid(
-                this, [this, ref] { m_git->applyStash(ref); }, [&] { emit stashChanged(); },
-                [&](const QString &e) { emit statusMessage(e, true); });
+                this, [this, ref] { m_git->applyStash(ref); }, [this] { emit stashChanged(); },
+                [this](const QString &e) { emit statusMessage(e, true); });
         });
         menu.addAction("Pop (apply + drop)", [&] { popStashRef(ref); });
         menu.addAction("Rename…", [&] {
@@ -567,11 +570,11 @@ void SourceTreeWidget::onContextMenu(const QPoint &pos) {
                 return;
             runBackgroundVoid(
                 this, [this, ref, name] { m_git->renameStash(ref, name.trimmed()); },
-                [&] {
+                [this] {
                     emit stashChanged();
                     refresh();
                 },
-                [&](const QString &e) { emit statusMessage(e, true); });
+                [this](const QString &e) { emit statusMessage(e, true); });
         });
         menu.addAction("Drop", [&] { dropStashRef(ref); });
         menu.exec(global);
@@ -580,12 +583,12 @@ void SourceTreeWidget::onContextMenu(const QPoint &pos) {
         menu.addAction("Reset to recorded commit", [&] {
             runBackground<bool>(
                 this, [this, ref] { return m_git->resetSubmodule(ref); },
-                [&](bool ok) {
+                [this](bool ok) {
                     emit statusMessage(ok ? "Submodule reset."
                                            : "Submodule worktree is dirty — reset refused.",
                                        !ok);
                 },
-                [&](const QString &e) { emit statusMessage(e, true); });
+                [this](const QString &e) { emit statusMessage(e, true); });
         });
         menu.exec(global);
     }
