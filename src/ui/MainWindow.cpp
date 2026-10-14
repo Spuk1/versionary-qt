@@ -367,17 +367,11 @@ void MainWindow::doFetch() {
         return;
     m_headerAction = "fetching";
     setBusy(true);
-    QPointer<OperationProgressDialog> progress = new OperationProgressDialog("Fetching", this);
-    auto progCb = GitService::ProgressCallback(
-        [progress](const GitProgress &p) { if (progress) progress->reportProgress(p); });
-    auto cancel = progress->cancelFlag();
+    // No progress popup: the header spinner carries the fetch state.
+    // (A dialog here would pop up on every throttled focus fetch.)
     runBackgroundVoid(
-        this, [this, progCb, cancel] { m_git->fetch(progCb, cancel); },
-        [this, progress] {
-            if (progress) {
-                progress->close();
-                progress->deleteLater();
-            }
+        this, [this] { m_git->fetch(); },
+        [this] {
             setBusy(false);
             m_lastFetch = QDateTime::currentDateTime();
             if (m_fetchLabel)
@@ -385,13 +379,10 @@ void MainWindow::doFetch() {
             refreshHead();
             m_sourceTree->refresh();
         },
-        [this, progress](const QString &e) {
-            if (progress) {
-                progress->close();
-                progress->deleteLater();
-            }
+        [this](const QString &e) {
             setBusy(false);
-            showOpError(e);
+            // Status bar only: background fetches must never raise a modal.
+            statusBar()->showMessage(e, 8000);
         });
 }
 

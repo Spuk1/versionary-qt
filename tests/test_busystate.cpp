@@ -85,14 +85,12 @@ private slots:
         }
         QVERIFY2(sawPush, "push never started");
         QTRY_VERIFY_WITH_TIMEOUT(!progressWithTitle("Pushing") && !w.isBusy(), 15000);
+        // Fetch runs without any popup (header spinner only): busy is
+        // claimed synchronously by doFetch, so no latch race here.
+        QTRY_VERIFY_WITH_TIMEOUT(!w.isBusy(), 15000);
         QVERIFY(QMetaObject::invokeMethod(&w, "doFetch"));
-        bool sawFetch = false;
-        for (int i = 0; i < 1500 && !sawFetch; ++i) {
-            QTest::qWait(10);
-            sawFetch = progressWithTitle("Fetching");
-        }
-        QVERIFY2(sawFetch, "fetch never started");
-        QTRY_VERIFY_WITH_TIMEOUT(!progressWithTitle("Fetching") && !w.isBusy(), 15000);
+        QVERIFY2(w.isBusy(), "fetch never started");
+        QTRY_VERIFY_WITH_TIMEOUT(!w.isBusy(), 15000);
     }
 
     void supportLinkIsWired() {
