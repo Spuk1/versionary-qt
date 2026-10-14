@@ -62,6 +62,7 @@ public:
     // Staging / commit
     QStringList listChanges();
     QStringList listStaged();
+    QStringList listUntracked();
     void stageFile(const QString &file);
     void unstageFile(const QString &file);
     void discardFile(const QString &file);

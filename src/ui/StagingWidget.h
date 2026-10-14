@@ -2,6 +2,7 @@
 
 #include "git/OperationState.h"
 
+#include <QSet>
 #include <QWidget>
 
 class DiffViewer;
@@ -69,6 +70,7 @@ private:
     void stageSingleFile(const QString &file);
     void unstageSingleFile(const QString &file);
     void discardSingleFile(const QString &file);
+    void deleteUntrackedFile(const QString &file);
     void openBlame(const QString &file);
     void openFileHistory(const QString &file);
     void resetSubmodulesChecked(const QStringList &subs, std::function<void()> then);
@@ -101,6 +103,7 @@ private:
     OperationState m_opState;
     QStringList m_conflicts;
     QStringList m_submodules;
+    QSet<QString> m_untrackedFiles;
     QString m_currentFile;
     QString m_currentBucket; // "unstaged" | "staged"
     QString m_currentPatch;

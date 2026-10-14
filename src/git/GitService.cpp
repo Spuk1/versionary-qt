@@ -368,6 +368,12 @@ QStringList GitService::listStaged() {
     return r.stdoutText.split('\n', Qt::SkipEmptyParts);
 }
 
+QStringList GitService::listUntracked() {
+    const GitResult r =
+        runOrThrow({"ls-files", "--others", "--exclude-standard"});
+    return r.stdoutText.split('\n', Qt::SkipEmptyParts);
+}
+
 void GitService::stageFile(const QString &file) {
     runOrThrow({"add", "--", file});
 }

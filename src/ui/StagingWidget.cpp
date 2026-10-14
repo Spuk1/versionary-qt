@@ -18,6 +18,7 @@
 #include <QApplication>
 #include <QDesktopServices>
 #include <QDir>
+#include <QFile>
 #include <QHBoxLayout>
 #include <QUrl>
 #include <QLabel>
@@ -392,23 +393,24 @@ QStringList StagingWidget::checkedFiles(QListWidget *list) const {
 void StagingWidget::loadChanges() {
     const QString path = m_repos->selectedPath();
     emit busyChanged(true);
-    using ChangesTuple =
-        std::tuple<QStringList, QStringList, OperationState, QStringList, QStringList>;
+    using ChangesTuple = std::tuple<QStringList, QStringList, OperationState, QStringList,
+                                     QStringList, QStringList>;
     runBackground<ChangesTuple>(
         this,
         [this] {
             return std::make_tuple(m_git->listChanges(), m_git->listStaged(),
                                    m_git->operationState(), m_git->conflictedFiles(),
-                                   m_git->listSubmodules());
+                                   m_git->listSubmodules(), m_git->listUntracked());
         },
         [this, path](const ChangesTuple &res) {
             emit busyChanged(false);
             if (path != m_repos->selectedPath())
                 return; // user switched repos while loading
-            const auto &[changes, staged, opState, conflicts, submodules] = res;
+            const auto &[changes, staged, opState, conflicts, submodules, untracked] = res;
             m_opState = opState;
             m_conflicts = conflicts;
             m_submodules = submodules;
+            m_untrackedFiles = QSet<QString>(untracked.begin(), untracked.end());
             m_unstagedCount = changes.size();
             emit unstagedCountChanged(changes.size());
             fillList(m_unstaged, changes);
@@ -579,6 +581,11 @@ void StagingWidget::showFileMenu(QListWidget *list, const QPoint &pos, bool stag
     } else {
         menu.addAction("Stage", [this, file] { stageSingleFile(file); });
         menu.addAction("Discard", [this, file] { discardSingleFile(file); });
+        // Tracked-file discard (git restore) fails on untracked paths, so
+        // untracked files get an explicit delete action instead. Collapsed
+        // "dir/" rows only ever come from untracked directories.
+        if (isDir || m_untrackedFiles.contains(file))
+            menu.addAction("Delete from disk…", [this, file] { deleteUntrackedFile(file); });
     }
     menu.addSeparator();
     menu.addAction("Copy relative path", [file] {
@@ -648,6 +655,23 @@ void StagingWidget::discardSingleFile(const QString &file) {
             emit busyChanged(false);
             emit statusMessage(e, true);
         });
+}
+
+void StagingWidget::deleteUntrackedFile(const QString &file) {
+    QString rel = file;
+    while (rel.endsWith('/'))
+        rel.chop(1);
+    const QString abs = QDir(m_repos->selectedPath()).absoluteFilePath(rel);
+    if (QMessageBox::question(this, "Delete from disk",
+            "Move '" + file + "' to the system trash?")
+        != QMessageBox::Yes)
+        return;
+    // moveToTrash (not permanent delete): recoverable via the OS trash.
+    if (!QFile::moveToTrash(abs)) {
+        emit statusMessage("Could not move '" + file + "' to the trash.", true);
+        return;
+    }
+    loadChanges();
 }
 
 void StagingWidget::openBlame(const QString &file) {

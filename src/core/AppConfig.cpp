@@ -2,10 +2,17 @@
 
 #include <QCoreApplication>
 #include <QDir>
+#include <QEventLoop>
 #include <QFile>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QNetworkAccessManager>
+#include <QNetworkReply>
+#include <QNetworkRequest>
 #include <QProcessEnvironment>
 #include <QStandardPaths>
 #include <QTextStream>
+#include <QTimer>
 
 namespace {
 QMap<QString, QString> &dotEnvCache() {
@@ -52,10 +59,59 @@ QString envOrDotEnv(const char *name, const char *baked = "") {
     return dotEnvCache().value(name);
 }
 
+// Remote fallback: distro builds (AUR, Flathub) cannot bake secrets, so when
+// nothing is configured locally the client asks our key server over HTTPS.
+// Precedence: everything local first, remote last. Set
+// VERSIONARY_NO_REMOTE_CONFIG=1 to disable (used by the test suite to stay
+// hermetic); override the URL for testing/self-hosting via
+// VERSIONARY_SECRETS_URL. NOTE: the endpoint is public by design (a desktop
+// app cannot authenticate) — it exists so keys can be rotated without
+// rebuilds, not to keep them confidential.
+constexpr int kRemoteTimeoutMs = 3000;
+const char *kDefaultSecretsUrl = "https://secrets.fairyland.freemyip.com/v1/oauth-keys";
+
+bool isKnownKey(const QString &key) {
+    return key == "VERSIONARY_GITHUB_CLIENT_ID"
+        || key == "VERSIONARY_GITHUB_CLIENT_SECRET"
+        || key == "VERSIONARY_BITBUCKET_CLIENT_ID"
+        || key == "VERSIONARY_BITBUCKET_CLIENT_SECRET"
+        || key == "VERSIONARY_GITLAB_CLIENT_ID"
+        || key == "VERSIONARY_GITLAB_CLIENT_SECRET";
+}
+QMap<QString, QString> &remoteCache();
+
+QMap<QString, QString> fetchRemoteConfig(const QString &url) {
+    QMap<QString, QString> out;
+    QNetworkAccessManager mgr;
+    QEventLoop loop;
+    QTimer timer;
+    timer.setSingleShot(true);
+    QObject::connect(&timer, &QTimer::timeout, &loop, &QEventLoop::quit);
+    QObject::connect(&mgr, &QNetworkAccessManager::finished, &loop, &QEventLoop::quit);
+    QNetworkReply *reply = mgr.get(QNetworkRequest(QUrl(url)));
+    timer.start(kRemoteTimeoutMs);
+    loop.exec();
+    timer.stop();
+    const bool timedOut = !timer.isActive() && reply->isRunning();
+    if (!timedOut && reply->error() == QNetworkReply::NoError) {
+        const QJsonDocument doc = QJsonDocument::fromJson(reply->readAll());
+        if (doc.isObject()) {
+            const QJsonObject obj = doc.object();
+            for (auto it = obj.begin(); it != obj.end(); ++it) {
+                if (it.value().isString() && isKnownKey(it.key())
+                    && !it.value().toString().isEmpty())
+                    out.insert(it.key(), it.value().toString());
+            }
+        }
+    }
+    reply->deleteLater();
+    return out;
+}
+
 // New canonical names use the VERSIONARY_ prefix. The pre-1.0 names
 // (GITHUB_CLIENT_ID, CLIENT_GITHUB_SECRET, …) are still honored as a
 // fallback so existing ~/.Versionary/.env files keep working.
-// Precedence: new env > legacy env > baked > new .env > legacy .env.
+// Precedence: new env > legacy env > baked > new .env > legacy .env > remote.
 QString envOrDotEnvWithLegacy(const char *name, const char *legacyName, const char *baked = "") {
     const auto sysEnv = QProcessEnvironment::systemEnvironment();
     QString v = sysEnv.value(name);
@@ -70,7 +126,25 @@ QString envOrDotEnvWithLegacy(const char *name, const char *legacyName, const ch
     v = cache.value(name);
     if (!v.isEmpty())
         return v;
-    return cache.value(legacyName);
+    v = cache.value(legacyName);
+    if (!v.isEmpty())
+        return v;
+    return remoteCache().value(name);
+}
+
+QMap<QString, QString> &remoteCache() {
+    static QMap<QString, QString> cache;
+    static bool loaded = false;
+    if (!loaded) {
+        loaded = true;
+        const auto sysEnv = QProcessEnvironment::systemEnvironment();
+        if (sysEnv.value("VERSIONARY_NO_REMOTE_CONFIG").isEmpty()) {
+            const QString url = sysEnv.value(
+                "VERSIONARY_SECRETS_URL", QString::fromLatin1(kDefaultSecretsUrl));
+            cache = fetchRemoteConfig(url);
+        }
+    }
+    return cache;
 }
 
 // Build-time baked credentials, e.g.

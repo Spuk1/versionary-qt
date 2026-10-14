@@ -66,15 +66,11 @@ Flathub has two extra requirements — prepare these before submitting:
 
 AUR and Flathub builds run on **other people's machines**, so your
 `VERSIONARY_*` secrets can't be injected the way the GitHub Release
-workflow does. Two options:
-
-- **Ship without baked keys (recommended to start).** OAuth login buttons
-  stay inert, but SSH, HTTPS + personal access tokens, and all local
-  features work. Zero secret exposure.
-- **Embed the IDs publicly.** The GitHub release binaries already ship
-  these values to everyone, so putting them in the AUR `PKGBUILD` /
-  Flathub manifest is no additional exposure — but it does print them in
-  public build logs/packaging files, so it's a conscious choice.
-
-The app already handles missing keys gracefully (empty value = that
-provider's login disabled), so no code changes are needed either way.
+workflow does. These builds fall back to the key server
+(`https://secrets.fairyland.freemyip.com`, see
+[docs/SECRETS_SERVER.md](SECRETS_SERVER.md)): when no key is baked in and
+no local `.env`/environment provides one, the client fetches the public
+OAuth credentials over HTTPS at login time. The endpoint is public by
+design (a desktop app can't authenticate) — it exists so keys can be
+rotated without rebuilds, not to hide them. No code or packaging changes
+are needed; it works out of the box.
