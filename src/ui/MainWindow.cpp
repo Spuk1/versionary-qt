@@ -23,6 +23,7 @@
 #include "net/OAuthClient.h"
 
 #include <QApplication>
+#include <QCloseEvent>
 #include <QCoreApplication>
 #include <QDateTime>
 #include <QFileDialog>
@@ -34,6 +35,7 @@
 #include <QMessageBox>
 #include <QLabel>
 #include <QPushButton>
+#include <QSettings>
 #include <QSplitter>
 #include <QStatusBar>
 #include <QTabWidget>
@@ -174,6 +176,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
         onRepoSelected(m_repos->selectedIndex());
     }
     updateEmptyState();
+    restoreLayout();
 
     // Deferred startup fetch, mirroring GitContext's 30s timer (shortened).
     QTimer::singleShot(30000, this, &MainWindow::doFetch);
@@ -273,6 +276,56 @@ QString MainWindow::formatFetchTime(const QDateTime &time) {
 }
 
 bool MainWindow::shouldShowEmptyState(int repoCount) { return repoCount <= 0; }
+
+QStringList MainWindow::layoutSettingKeys() {
+    return {"main/geometry", "main/centerSplitter", "main/stagingSplitter",
+            "main/historySplitter"};
+}
+
+void MainWindow::saveSplitterState(QSettings &settings, const QString &key, QSplitter *splitter) {
+    if (splitter)
+        settings.setValue(key, splitter->saveState());
+}
+
+void MainWindow::restoreSplitterState(QSettings &settings, const QString &key,
+                                      QSplitter *splitter) {
+    if (!splitter)
+        return;
+    const QByteArray state = settings.value(key).toByteArray();
+    if (!state.isEmpty())
+        splitter->restoreState(state);
+}
+
+void MainWindow::saveLayout() {
+    QSettings s;
+    s.setValue("main/geometry", saveGeometry());
+    saveSplitterState(s, "main/centerSplitter", m_centerSplitter);
+    if (m_staging)
+        saveSplitterState(s, "main/stagingSplitter",
+                          m_staging->findChild<QSplitter *>("StagingSplitter"));
+    if (m_history)
+        saveSplitterState(s, "main/historySplitter",
+                          m_history->findChild<QSplitter *>("HistorySplitter"));
+}
+
+void MainWindow::restoreLayout() {
+    QSettings s;
+    const QByteArray geom = s.value("main/geometry").toByteArray();
+    if (!geom.isEmpty())
+        restoreGeometry(geom);
+    restoreSplitterState(s, "main/centerSplitter", m_centerSplitter);
+    if (m_staging)
+        restoreSplitterState(s, "main/stagingSplitter",
+                             m_staging->findChild<QSplitter *>("StagingSplitter"));
+    if (m_history)
+        restoreSplitterState(s, "main/historySplitter",
+                             m_history->findChild<QSplitter *>("HistorySplitter"));
+}
+
+void MainWindow::closeEvent(QCloseEvent *event) {
+    saveLayout();
+    QMainWindow::closeEvent(event);
+}
 
 bool MainWindow::ensureRepoSelected() {
     if (m_repos->selectedPath().isEmpty()) {

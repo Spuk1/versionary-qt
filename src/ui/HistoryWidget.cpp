@@ -58,6 +58,7 @@ HistoryWidget::HistoryWidget(GitService *git, RepoManager *repos, QWidget *paren
     layout->addWidget(m_emptyLabel);
 
     auto *splitter = new QSplitter(Qt::Horizontal, this);
+    splitter->setObjectName("HistorySplitter");
     m_log = new QListView(splitter);
     m_log->setSelectionMode(QAbstractItemView::SingleSelection);
     m_log->setUniformItemSizes(true);

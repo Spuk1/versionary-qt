@@ -56,6 +56,7 @@ StagingWidget::StagingWidget(GitService *git, RepoManager *repos, QWidget *paren
     barLayout->addWidget(abortBtn);
     layout->addWidget(m_conflictBar);
     auto *splitter = new QSplitter(Qt::Horizontal, this);
+    splitter->setObjectName("StagingSplitter");
 
     auto *left = new QWidget(splitter);
     auto *leftLayout = new QVBoxLayout(left);

@@ -3,6 +3,7 @@
 #include <QDateTime>
 #include <QMainWindow>
 #include <QString>
+#include <QStringList>
 
 class ActionToolBar;
 class ApiClient;
@@ -11,7 +12,9 @@ class GitService;
 class HistoryWidget;
 class IdentityStore;
 class OAuthClient;
+class QCloseEvent;
 class QLabel;
+class QSettings;
 class QSplitter;
 class QTabWidget;
 class RepoHeaderWidget;
@@ -36,6 +39,10 @@ public:
     static QString parseAheadBehindResult(const QString &result);
     static QString formatFetchTime(const QDateTime &time);
     static bool shouldShowEmptyState(int repoCount);
+    static QStringList layoutSettingKeys();
+    static void saveSplitterState(QSettings &settings, const QString &key, QSplitter *splitter);
+    static void restoreSplitterState(QSettings &settings, const QString &key,
+                                     QSplitter *splitter);
 
 private slots:
     void onRepoSelected(int index);
@@ -63,7 +70,12 @@ private:
     void selectRepoAndRefresh(int index);
     void refreshHead();
     void updateEmptyState();
+    void saveLayout();
+    void restoreLayout();
     bool ensureRepoSelected();
+
+protected:
+    void closeEvent(QCloseEvent *event) override;
 
     ThemeManager *m_themes;
     RepoManager *m_repos;
