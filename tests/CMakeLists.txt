@@ -3,6 +3,10 @@ function(add_versionary_test name)
     target_link_libraries(${name} PRIVATE versionary_core Qt6::Test)
     add_test(NAME ${name} COMMAND ${name})
     set_tests_properties(${name} PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    # Console subsystem: qt_add_executable defaults to WIN32_EXECUTABLE, which
+    # detaches stdout on Windows so ctest captures NO output (not even FAIL
+    # lines). Tests must stay console apps for diagnosable CI logs.
+    set_target_properties(${name} PROPERTIES WIN32_EXECUTABLE FALSE)
 endfunction()
 
 add_versionary_test(test_diffpatch)
