@@ -32,17 +32,25 @@ private slots:
             auto *sp = new QSplitter(Qt::Horizontal);
             sp->addWidget(new QWidget(sp));
             sp->addWidget(new QWidget(sp));
-            sp->setSizes({100, 300});
+            // Fixed size + shown: setSizes()/sizes() on a *hidden* splitter is
+            // style-dependent (Windows native style adjusts sizes differently
+            // than macOS/offscreen), which broke this test on Windows CI.
+            sp->setFixedSize(400, 200);
             return sp;
         };
         QScopedPointer<QSplitter> src(makeSplitter());
+        src->show();
+        QVERIFY(QTest::qWaitForWindowExposed(src.data(), 15000));
+        src->setSizes({100, 300});
+        QVERIFY(src->sizes().size() == 2);
         {
             QSettings s(iniPath, QSettings::IniFormat);
             MainWindow::saveSplitterState(s, "main/centerSplitter", src.data());
             s.sync();
         }
         QScopedPointer<QSplitter> dst(makeSplitter());
-        dst->setSizes({300, 100});
+        dst->show();
+        QVERIFY(QTest::qWaitForWindowExposed(dst.data(), 15000));
         {
             QSettings s(iniPath, QSettings::IniFormat);
             MainWindow::restoreSplitterState(s, "main/centerSplitter", dst.data());

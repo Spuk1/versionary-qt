@@ -44,7 +44,8 @@ private slots:
         ConflictDialog conflict(nullptr, {"a.txt"});
         BlameDialog blame("a.txt", {});
         FileHistoryDialog history(nullptr, "a.txt", {});
-        QuickOpenDialog quick({{"demo", "/tmp/demo"}});
+        const QVector<RepositoryEntry> quickRepos = {{"demo", "/tmp/demo"}};
+        QuickOpenDialog quick(quickRepos);
         StashViewerDialog stashViewer("{0}: WIP on main");
         CompareDialog compare(nullptr, "feature", {"main", "feature"});
         const QList<QDialog *> dialogs = {&stash, &branch, &clone, &settings,
