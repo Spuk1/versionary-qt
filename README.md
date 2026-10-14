@@ -83,7 +83,8 @@ makepkg -si
 ```
 
 The `PKGBUILD` lives in `packaging/` (bump `pkgver` via the `pkgver()`
-function automatically on build).
+function automatically on build). See [docs/PACKAGING.md](docs/PACKAGING.md)
+for publishing to AUR and Flathub.
 
 ### Flatpak
 
