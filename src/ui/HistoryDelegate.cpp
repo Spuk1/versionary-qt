@@ -165,23 +165,24 @@ void HistoryDelegate::paint(QPainter *painter, const QStyleOptionViewItem &optio
 
     const QList<Badge> badges = refBadges(c.decorations);
     QFontMetrics badgeFm(badgeFont);
-    qreal badgesW = 0;
-    for (const Badge &b : badges)
-        badgesW += badgeFm.horizontalAdvance(b.text) + 12 + 6;
 
+    // Line 1: subject only, full width.
     QFontMetrics subjectFm(subjectFont);
     const QString subject =
         subjectFm.elidedText(c.message.split('\n').first().trimmed(), Qt::ElideRight,
-                             qMax(20, int(textW - badgesW - 8)));
+                             qMax(20, int(textW - 8)));
     painter->setPen(pal.color(QPalette::Text));
     painter->setFont(subjectFont);
     const qreal line1Y = r.top() + 22;
     painter->drawText(QPointF(textX, line1Y), subject);
-    qreal bx = textX + subjectFm.horizontalAdvance(subject) + 8;
+
+    // Line 2: ref badges (tags/branches) on their own line.
+    qreal bx = textX;
+    const qreal line2Y = r.top() + 44;
     painter->setFont(badgeFont);
     for (const Badge &b : badges) {
         const qreal bw = badgeFm.horizontalAdvance(b.text) + 12;
-        const QRectF pill(bx, line1Y - 14, bw, 18);
+        const QRectF pill(bx, line2Y - 14, bw, 18);
         if (pill.right() > r.right() - 4)
             break;
         painter->setPen(Qt::NoPen);
@@ -192,10 +193,10 @@ void HistoryDelegate::paint(QPainter *painter, const QStyleOptionViewItem &optio
         bx += bw + 6;
     }
 
-    // Line 2: avatar + author + sha + date
-    const qreal line2Y = r.top() + 44;
+    // Line 3: avatar + author + sha + date
+    const qreal line3Y = r.top() + 66;
     const int avatarD = 18;
-    const QRectF avatarRect(textX, line2Y - 14, avatarD, avatarD);
+    const QRectF avatarRect(textX, line3Y - 14, avatarD, avatarD);
     painter->setPen(Qt::NoPen);
     painter->setBrush(ThemeColors::avatarBg(c.author.name));
     painter->drawEllipse(avatarRect);
@@ -207,7 +208,7 @@ void HistoryDelegate::paint(QPainter *painter, const QStyleOptionViewItem &optio
     qreal tx = textX + avatarD + 8;
     painter->setPen(pal.color(QPalette::Text));
     const QString author = smallFm.elidedText(c.author.name, Qt::ElideRight, 160);
-    painter->drawText(QPointF(tx, line2Y), author);
+    painter->drawText(QPointF(tx, line3Y), author);
     tx += smallFm.horizontalAdvance(author) + 10;
     painter->setPen(ThemeColors::shaFg(pal));
     painter->setFont(monoFont);
@@ -216,12 +217,12 @@ void HistoryDelegate::paint(QPainter *painter, const QStyleOptionViewItem &optio
     const qreal shaW = monoFm.horizontalAdvance(sha) + 12;
     painter->setBrush(ThemeColors::shaBg(pal));
     painter->setPen(Qt::NoPen);
-    painter->drawRoundedRect(QRectF(tx, line2Y - 14, shaW, 18), 6, 6);
+    painter->drawRoundedRect(QRectF(tx, line3Y - 14, shaW, 18), 6, 6);
     painter->setPen(ThemeColors::shaFg(pal));
-    painter->drawText(QRectF(tx, line2Y - 14, shaW, 18), Qt::AlignCenter, sha);
+    painter->drawText(QRectF(tx, line3Y - 14, shaW, 18), Qt::AlignCenter, sha);
     tx += shaW + 10;
     painter->setFont(smallFont);
-    painter->drawText(QPointF(tx, line2Y), c.dateString());
+    painter->drawText(QPointF(tx, line3Y), c.dateString());
 
     painter->restore();
 }

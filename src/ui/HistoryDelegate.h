@@ -6,8 +6,9 @@
 #include <QList>
 #include <QStyledItemDelegate>
 
-// Rich commit row: lane graph, subject + ref badges, avatar + author,
-// short sha and date. Mirrors the CommitRow rendering in Commits.tsx.
+// Rich commit row: lane graph, subject, ref badges on their own line,
+// avatar + author, short sha and date. Mirrors the CommitRow rendering
+// in Commits.tsx.
 class HistoryDelegate : public QStyledItemDelegate {
     Q_OBJECT
 public:
@@ -20,7 +21,7 @@ public:
     QSize sizeHint(const QStyleOptionViewItem &option,
                    const QModelIndex &index) const override;
 
-    static constexpr int kRowHeight = 58;
+    static constexpr int kRowHeight = 78;
     static constexpr int kLaneWidth = 12;
     static constexpr int kLanePad = 15;
     static constexpr int kMaxLanes = 7;
