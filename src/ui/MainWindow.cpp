@@ -378,6 +378,7 @@ void MainWindow::doFetch() {
                 m_fetchLabel->setText(formatFetchTime(m_lastFetch));
             refreshHead();
             m_sourceTree->refresh();
+            m_staging->refresh();
         },
         [this](const QString &e) {
             setBusy(false);
@@ -468,6 +469,7 @@ void MainWindow::doFetchAll() {
                 m_fetchLabel->setText(formatFetchTime(m_lastFetch));
             refreshHead();
             m_sourceTree->refresh();
+            m_staging->refresh();
             if (res.errors.isEmpty())
                 showStatus(formatFetchAllSummary(res.errors, total), false);
             else

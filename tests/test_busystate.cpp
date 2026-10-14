@@ -1,8 +1,10 @@
 #include "core/GitRunner.h"
 #include "ui/MainWindow.h"
 #include "ui/OperationProgressDialog.h"
+#include "ui/StagingWidget.h"
 
 #include <QFile>
+#include <QListWidget>
 #include <QMenuBar>
 #include <QTemporaryDir>
 #include <QTimer>
@@ -93,8 +95,47 @@ private slots:
         QTRY_VERIFY_WITH_TIMEOUT(!w.isBusy(), 15000);
     }
 
-    void supportLinkIsWired() {
-        // Same Ko-fi page as the badge in the old client. Actions are only
+    // A fetch refreshes the Changes tab so external workdir edits show up.
+    void fetchRefreshesStaging() {
+        QTimer killer;
+        killer.setInterval(100);
+        connect(&killer, &QTimer::timeout, [] {
+            if (QWidget *modal = QApplication::activeModalWidget())
+                modal->close();
+        });
+        killer.start();
+
+        MainWindow w;
+        w.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&w, 15000));
+        QTRY_VERIFY_WITH_TIMEOUT(!w.isBusy(), 15000);
+        auto *staging = w.findChild<StagingWidget *>();
+        QVERIFY(staging != nullptr);
+        auto stagedFile = [&](const QString &file) {
+            for (QListWidget *list : staging->findChildren<QListWidget *>()) {
+                for (int i = 0; i < list->count(); ++i) {
+                    if (list->item(i)->data(Qt::UserRole).toString() == file)
+                        return true;
+                }
+            }
+            return false;
+        };
+        QVERIFY(!stagedFile("a.txt")); // tree clean: guards a vacuous pass
+        QFile f(m_work + "/a.txt");
+        QVERIFY(f.open(QIODevice::Append | QIODevice::Text));
+        f.write("external edit\n");
+        f.close();
+        QVERIFY(QMetaObject::invokeMethod(&w, "doFetch"));
+        QTRY_VERIFY_WITH_TIMEOUT(!w.isBusy(), 15000);
+        bool shown = false;
+        for (int i = 0; i < 300 && !shown; ++i) {
+            QTest::qWait(50);
+            shown = stagedFile("a.txt");
+        }
+        QVERIFY2(shown, "staging missed the external edit after fetch");
+    }
+
+    void supportLinkIsWired() {        // Same Ko-fi page as the badge in the old client. Actions are only
         // checked for existence: triggering them would open a browser.
         QCOMPARE(MainWindow::supportUrl(), QString("https://ko-fi.com/L3L71NX36P"));
         MainWindow w;
