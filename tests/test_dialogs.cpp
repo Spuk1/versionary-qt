@@ -10,6 +10,7 @@
 #include "ui/ConflictDialog.h"
 #include "ui/FileHistoryDialog.h"
 #include "ui/OnboardingDialog.h"
+#include "ui/QuickOpenDialog.h"
 #include "ui/SettingsDialog.h"
 #include "ui/StashDialog.h"
 #include "ui/ThemeManager.h"
@@ -41,8 +42,10 @@ private slots:
         ConflictDialog conflict(nullptr, {"a.txt"});
         BlameDialog blame("a.txt", {});
         FileHistoryDialog history(nullptr, "a.txt", {});
+        QuickOpenDialog quick({{"demo", "/tmp/demo"}});
         const QList<QDialog *> dialogs = {&stash, &branch, &clone, &settings,
-                                                &onboarding, &conflict, &blame, &history};
+                                                &onboarding, &conflict, &blame, &history,
+                                                &quick};
         for (QDialog *dlg : dialogs) {
             dlg->show();
             QVERIFY(QTest::qWaitForWindowExposed(dlg, 15000));

@@ -109,6 +109,8 @@ add_library(versionary_core STATIC
     src/ui/SettingsDialog.h
     src/ui/OnboardingDialog.cpp
     src/ui/OnboardingDialog.h
+    src/ui/QuickOpenDialog.cpp
+    src/ui/QuickOpenDialog.h
 )
 target_link_libraries(versionary_core PUBLIC
     Qt6::Widgets Qt6::Network Qt6::Concurrent)

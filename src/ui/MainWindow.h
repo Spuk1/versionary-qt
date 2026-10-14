@@ -30,6 +30,7 @@ public:
 private slots:
     void onRepoSelected(int index);
     void openRepository();
+    void openQuickOpen();
     void doFetch();
     void setupMenuBar();
     void showAbout();

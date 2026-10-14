@@ -6,6 +6,7 @@
 #include "HistoryWidget.h"
 #include "OnboardingDialog.h"
 #include "OperationProgressDialog.h"
+#include "QuickOpenDialog.h"
 #include "RepoHeaderWidget.h"
 #include "RepoManager.h"
 #include "RepoTabBar.h"
@@ -202,6 +203,19 @@ void MainWindow::openRepository() {
         this, [this, dir] { return GitService::toplevelOf(dir); },
         [&](const QString &top) { m_repos->addRepository(top); },
         [&](const QString &) { showStatus("Not a Git repository.", true); });
+}
+
+void MainWindow::openQuickOpen() {
+    if (m_repos->repositories().isEmpty()) {
+        showStatus("Open or clone a repository first", true);
+        return;
+    }
+    QuickOpenDialog dlg(m_repos->repositories(), this);
+    if (dlg.exec() != QDialog::Accepted)
+        return;
+    const int idx = dlg.selectedRepoIndex();
+    if (idx >= 0)
+        m_repos->revealRepository(idx);
 }
 
 void MainWindow::doFetch() {
@@ -437,6 +451,9 @@ void MainWindow::setupMenuBar() {
     QAction *openAct = general->addAction("&Open…");
     openAct->setShortcut(QKeySequence("Ctrl+O"));
     connect(openAct, &QAction::triggered, this, &MainWindow::openRepository);
+    QAction *quickAct = general->addAction("&Quick Open…");
+    quickAct->setShortcut(QKeySequence("Ctrl+P"));
+    connect(quickAct, &QAction::triggered, this, &MainWindow::openQuickOpen);
     QAction *closeAct = general->addAction("&Close Repository");
     closeAct->setShortcut(QKeySequence("Ctrl+W"));
     connect(closeAct, &QAction::triggered, this, [&] {

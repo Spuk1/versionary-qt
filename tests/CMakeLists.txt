@@ -6,6 +6,7 @@ function(add_versionary_test name)
 endfunction()
 
 add_versionary_test(test_diffpatch)
+add_versionary_test(test_quickopen)
 add_versionary_test(test_remoteutils)
 add_versionary_test(test_stashutils)
 add_versionary_test(test_repositorystore)

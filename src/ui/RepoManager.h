@@ -27,6 +27,8 @@ public:
 
     WorkspaceState workspaces() const { return m_workspaces; }
 
+    void revealRepository(int index);
+
 public slots:
     void addRepository(const QString &path, int groupOverride = -1);
     void selectRepository(int index);
@@ -49,7 +51,6 @@ signals:
 
 private:
     void refreshBranchLabel(int index);
-    void revealRepository(int index);
 
     QVector<RepositoryEntry> m_repos;
     WorkspaceState m_workspaces;
