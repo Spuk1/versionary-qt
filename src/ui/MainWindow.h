@@ -1,6 +1,8 @@
 #pragma once
 
+#include <QDateTime>
 #include <QMainWindow>
+#include <QString>
 
 class ActionToolBar;
 class ApiClient;
@@ -9,6 +11,7 @@ class GitService;
 class HistoryWidget;
 class IdentityStore;
 class OAuthClient;
+class QLabel;
 class QTabWidget;
 class RepoHeaderWidget;
 class RepoManager;
@@ -26,6 +29,12 @@ class MainWindow : public QMainWindow {
 public:
     explicit MainWindow(QWidget *parent = nullptr);
     ~MainWindow() override;
+
+    // Pure helpers (unit-tested): "behind\tahead" → "↑n ↓m" / "✓ in sync".
+    static QString formatAheadBehind(int ahead, int behind);
+    static QString parseAheadBehindResult(const QString &result);
+    static QString formatFetchTime(const QDateTime &time);
+    static bool shouldShowEmptyState(int repoCount);
 
 private slots:
     void onRepoSelected(int index);
@@ -66,6 +75,9 @@ private:
     RepoHeaderWidget *m_header;
     RepoTabBar *m_tabs;
     QTabWidget *m_rightTabs = nullptr;
+    QLabel *m_aheadBehindLabel = nullptr;
+    QLabel *m_fetchLabel = nullptr;
+    QDateTime m_lastFetch;
     SourceTreeWidget *m_sourceTree;
     StagingWidget *m_staging;
     HistoryWidget *m_history;

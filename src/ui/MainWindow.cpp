@@ -32,6 +32,7 @@
 #include <QThreadPool>
 #include <QInputDialog>
 #include <QMessageBox>
+#include <QLabel>
 #include <QSplitter>
 #include <QStatusBar>
 #include <QTabWidget>
@@ -83,6 +84,10 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
     centerLayout->addWidget(splitter, 1);
     setCentralWidget(center);
     statusBar()->showMessage("Ready");
+    m_aheadBehindLabel = new QLabel("✓ in sync", this);
+    m_fetchLabel = new QLabel(formatFetchTime({}), this);
+    statusBar()->addPermanentWidget(m_aheadBehindLabel);
+    statusBar()->addPermanentWidget(m_fetchLabel);
 
     connect(toolbar, &ActionToolBar::cloneRequested, this, &MainWindow::openCloneDialog);
     connect(toolbar, &ActionToolBar::openRequested, this, &MainWindow::openRepository);
@@ -177,15 +182,54 @@ void MainWindow::refreshHead() {
     const QString path = m_repos->selectedPath();
     if (path.isEmpty())
         return;
-    runBackground<HeadState>(
-        this, [this] { return m_git->headState(); },
-        [this, path](const HeadState &h) {
+    runBackground<std::pair<HeadState, QString>>(
+        this,
+        [this] {
+            HeadState h = m_git->headState();
+            QString ab;
+            if (!h.branch.isEmpty()) {
+                try {
+                    ab = m_git->aheadBehind(h.branch);
+                } catch (...) {
+                    ab = {};
+                }
+            }
+            return std::make_pair(h, ab);
+        },
+        [this, path](const std::pair<HeadState, QString> &res) {
             if (path != m_repos->selectedPath())
                 return;
-            m_repos->setHeadState(h);
+            m_repos->setHeadState(res.first);
+            if (m_aheadBehindLabel)
+                m_aheadBehindLabel->setText(res.first.branch.isEmpty()
+                                                ? "—"
+                                                : parseAheadBehindResult(res.second));
         },
         [&](const QString &e) { showStatus(e, true); });
 }
+
+QString MainWindow::formatAheadBehind(int ahead, int behind) {
+    if (ahead <= 0 && behind <= 0)
+        return "✓ in sync";
+    if (ahead > 0 && behind > 0)
+        return QString("↑%1 ↓%2").arg(ahead).arg(behind);
+    if (ahead > 0)
+        return QString("↑%1").arg(ahead);
+    return QString("↓%1").arg(behind);
+}
+
+QString MainWindow::parseAheadBehindResult(const QString &result) {
+    const QStringList parts = result.split('\t');
+    return formatAheadBehind(parts.value(1).toInt(), parts.value(0).toInt());
+}
+
+QString MainWindow::formatFetchTime(const QDateTime &time) {
+    if (!time.isValid())
+        return "Not fetched yet";
+    return "Fetched " + time.toString("HH:mm");
+}
+
+bool MainWindow::shouldShowEmptyState(int repoCount) { return repoCount <= 0; }
 
 bool MainWindow::ensureRepoSelected() {
     if (m_repos->selectedPath().isEmpty()) {
@@ -235,6 +279,9 @@ void MainWindow::doFetch() {
                 progress->deleteLater();
             }
             setBusy(false);
+            m_lastFetch = QDateTime::currentDateTime();
+            if (m_fetchLabel)
+                m_fetchLabel->setText(formatFetchTime(m_lastFetch));
             refreshHead();
             m_sourceTree->refresh();
         },
