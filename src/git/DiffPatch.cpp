@@ -168,12 +168,16 @@ QPair<int, int> DiffPatch::countChanges(const QString &patch) {
 }
 
 QString DiffPatch::fileTotalLabel(const QString &file, int added, int removed) {
+    // Green/red match the diff bands' foregrounds in DiffViewer.
+    static const char *kAddedColor = "#3fb950";
+    static const char *kRemovedColor = "#f85149";
+    QString label = file.toHtmlEscaped();
     QStringList parts;
     if (added > 0)
-        parts << QString("+%1").arg(added);
+        parts << QString("<font color=\"%1\">+%2</font>").arg(kAddedColor).arg(added);
     if (removed > 0)
-        parts << QString("-%1").arg(removed);
+        parts << QString("<font color=\"%1\">-%2</font>").arg(kRemovedColor).arg(removed);
     if (parts.isEmpty())
-        return file;
-    return file + "  " + parts.join(' ');
+        return label;
+    return label + "  " + parts.join(' ');
 }

@@ -75,10 +75,16 @@ private slots:
     }
 
     void fileTotalLabelCases() {
-        QCOMPARE(DiffPatch::fileTotalLabel("a.txt", 3, 1), QString("a.txt  +3 -1"));
-        QCOMPARE(DiffPatch::fileTotalLabel("a.txt", 2, 0), QString("a.txt  +2"));
-        QCOMPARE(DiffPatch::fileTotalLabel("a.txt", 0, 4), QString("a.txt  -4"));
+        QCOMPARE(DiffPatch::fileTotalLabel("a.txt", 3, 1),
+                 QString("a.txt  <font color=\"#3fb950\">+3</font> "
+                         "<font color=\"#f85149\">-1</font>"));
+        QCOMPARE(DiffPatch::fileTotalLabel("a.txt", 2, 0),
+                 QString("a.txt  <font color=\"#3fb950\">+2</font>"));
+        QCOMPARE(DiffPatch::fileTotalLabel("a.txt", 0, 4),
+                 QString("a.txt  <font color=\"#f85149\">-4</font>"));
         QCOMPARE(DiffPatch::fileTotalLabel("a.txt", 0, 0), QString("a.txt"));
+        QCOMPARE(DiffPatch::fileTotalLabel("a<b>&c", 1, 0),
+                 QString("a&lt;b&gt;&amp;c  <font color=\"#3fb950\">+1</font>"));
     }
 
     void lineNumbersTrackHunks() {

@@ -116,6 +116,7 @@ StagingWidget::StagingWidget(GitService *git, RepoManager *repos, QWidget *paren
     auto *diffHeader = new QHBoxLayout();
     m_diffFileLabel = new QLabel("No file selected", right);
     m_diffFileLabel->setProperty("class", "muted");
+    m_diffFileLabel->setTextFormat(Qt::RichText); // totals render green/red
     m_diffFileLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
     diffHeader->addWidget(m_diffFileLabel);
     m_viewUnifiedBtn = new QPushButton("Unified", right);

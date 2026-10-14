@@ -20,6 +20,6 @@ public:
     static QList<QPair<int, int>> hunkLineNumbers(const QStringList &blocks);
     // Added/removed code line counts of a unified patch (headers excluded).
     static QPair<int, int> countChanges(const QString &patch);
-    // "file  +N -M" label (parts with zero counts omitted).
+    // "file  +N -M" rich-text label (+N green, -M red, zero parts omitted).
     static QString fileTotalLabel(const QString &file, int added, int removed);
 };
