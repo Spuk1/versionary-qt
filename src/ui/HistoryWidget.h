@@ -15,7 +15,9 @@ class QListView;
 class QListWidget;
 class QLineEdit;
 class QPushButton;
+class QStackedWidget;
 class QTextEdit;
+class SideBySideViewer;
 
 // History tab: searchable commit log, commit details, changed files and
 // per-file diffs. Mirrors Commits.tsx.
@@ -34,6 +36,9 @@ signals:
 private slots:
     void onCommitSelected();
     void onHistoryFileSelected();
+    void setUnifiedView();
+    void setSideBySideView();
+    void reloadCurrentDiff();
     void createTagForSelected();
     void checkoutSelected();
     void cherryPickSelected();
@@ -65,5 +70,13 @@ private:
     QTextEdit *m_details;
     QListWidget *m_files;
     DiffViewer *m_diff;
+    SideBySideViewer *m_sideDiff = nullptr;
+    QStackedWidget *m_diffStack = nullptr;
+    QPushButton *m_viewUnifiedBtn = nullptr;
+    QPushButton *m_viewSideBtn = nullptr;
+    class QCheckBox *m_wrapBox = nullptr;
+    class QCheckBox *m_ignoreWsBox = nullptr;
     QString m_selectedOid;
+    QString m_currentFile;
+    bool m_ignoreWs = false;
 };

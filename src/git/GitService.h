@@ -37,6 +37,7 @@ public:
 
     static QString toplevelOf(const QString &path);
     static QString formatGitError(const GitResult &result);
+    static QString normalizeRelPath(const QString &path);
     // Cheap local dirty check for any path (no auth needed).
     static bool hasUncommittedChanges(const QString &path);
 
@@ -75,7 +76,7 @@ public:
                                 const QString &query, bool all);
     CommitDetails commitDetails(const QString &oid);
     QString commitFileDiff(const QString &oid, const QString &filepath, int context,
-                           int perParent = -1);
+                           int perParent = -1, bool ignoreWhitespace = false);
     FileDiff fileDiff(const QString &filepath, const QString &base = "HEAD",
                       const QString &target = "WORKDIR", int context = 3,
                       bool ignoreWhitespace = false);

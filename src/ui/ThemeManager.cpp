@@ -121,6 +121,8 @@ QString ThemeManager::stylesheet(bool dark) {
     const QString input = dark ? "#2c323a" : "#ffffff";
     const QString inputBorder = dark ? "rgba(255,255,255,0.12)" : "#c5d2e5";
     const QString tabChecked = dark ? "#222831" : "#dbe8fb";
+    // Selected repo tab: brighter neutral border (ThemeColors::selectedBorder).
+    const QString tabCheckedBorder = dark ? "#797979" : "#96a3b5";
     return QString(
         "QMainWindow, QWidget#Central { background: %1; color: %2; }"
         // Panel cards: 1px faint outline + radius, mirroring the bordered
@@ -168,7 +170,7 @@ QString ThemeManager::stylesheet(bool dark) {
         "QPushButton.tab { border: 1px solid %4; border-radius: 12px;"
         " padding: 4px 10px; background: %8; font-weight: 400; font-size: 12px; }"
         "QPushButton.tab:hover { background: %5; }"
-        "QPushButton.tab:checked { background: %12; border-color: #2563eb;"
+        "QPushButton.tab:checked { background: %12; border-color: " + tabCheckedBorder + ";"
         " font-weight: 600; }"
         "QLineEdit, QComboBox, QSpinBox { background: %9; color: %2;"
         " border: 1px solid %10; border-radius: 6px; padding: 6px 8px; }"

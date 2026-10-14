@@ -3,6 +3,7 @@
 #include "DiffViewer.h"
 #include "HistoryDelegate.h"
 #include "RepoManager.h"
+#include "SideBySideViewer.h"
 #include "git/GitService.h"
 #include "models/CommitGraph.h"
 #include "models/CommitLogModel.h"
@@ -10,6 +11,7 @@
 #include <QHBoxLayout>
 #include <QApplication>
 #include <QButtonGroup>
+#include <QCheckBox>
 #include <QClipboard>
 #include <QInputDialog>
 #include <QItemSelectionModel>
@@ -20,7 +22,9 @@
 #include <QMenu>
 #include <QMessageBox>
 #include <QPushButton>
+#include <QSettings>
 #include <QSplitter>
+#include <QStackedWidget>
 #include <QTextEdit>
 #include <QTimer>
 #include <QVBoxLayout>
@@ -82,10 +86,34 @@ HistoryWidget::HistoryWidget(GitService *git, RepoManager *repos, QWidget *paren
     m_details->setMaximumHeight(160);
     m_files = new QListWidget(right);
     m_files->setMaximumHeight(140);
+    auto *diffHeader = new QHBoxLayout();
+    diffHeader->addStretch();
+    m_viewUnifiedBtn = new QPushButton("Unified", right);
+    m_viewUnifiedBtn->setCheckable(true);
+    m_viewUnifiedBtn->setToolTip("Unified diff view");
+    m_viewSideBtn = new QPushButton("Side-by-side", right);
+    m_viewSideBtn->setCheckable(true);
+    m_viewSideBtn->setToolTip("Side-by-side diff view");
+    auto *viewGroup = new QButtonGroup(this);
+    viewGroup->addButton(m_viewUnifiedBtn);
+    viewGroup->addButton(m_viewSideBtn);
+    diffHeader->addWidget(m_viewUnifiedBtn);
+    diffHeader->addWidget(m_viewSideBtn);
+    m_wrapBox = new QCheckBox("Wrap", right);
+    m_wrapBox->setToolTip("Wrap long diff lines");
+    diffHeader->addWidget(m_wrapBox);
+    m_ignoreWsBox = new QCheckBox("Ignore ws", right);
+    m_ignoreWsBox->setToolTip("Hide whitespace-only changes (-w)");
+    diffHeader->addWidget(m_ignoreWsBox);
+    m_diffStack = new QStackedWidget(right);
     m_diff = new DiffViewer(right);
+    m_sideDiff = new SideBySideViewer(right);
+    m_diffStack->addWidget(m_diff);
+    m_diffStack->addWidget(m_sideDiff);
     rightLayout->addWidget(m_details);
     rightLayout->addWidget(m_files);
-    rightLayout->addWidget(m_diff, 1);
+    rightLayout->addLayout(diffHeader);
+    rightLayout->addWidget(m_diffStack, 1);
     splitter->addWidget(m_log);
     splitter->addWidget(right);
     splitter->setStretchFactor(0, 1);
@@ -124,6 +152,35 @@ HistoryWidget::HistoryWidget(GitService *git, RepoManager *repos, QWidget *paren
     connect(m_model, &QAbstractItemModel::modelReset, this, rebuildGraph);
     connect(m_model, &QAbstractItemModel::layoutChanged, this, rebuildGraph);
     connect(m_files, &QListWidget::itemClicked, this, &HistoryWidget::onHistoryFileSelected);
+    connect(m_viewUnifiedBtn, &QPushButton::clicked, this, &HistoryWidget::setUnifiedView);
+    connect(m_viewSideBtn, &QPushButton::clicked, this, &HistoryWidget::setSideBySideView);
+    connect(m_wrapBox, &QCheckBox::toggled, this, [this](bool on) {
+        m_diff->setLineWrapMode(on ? QPlainTextEdit::WidgetWidth : QPlainTextEdit::NoWrap);
+        m_sideDiff->setWordWrap(on);
+        QSettings().setValue("staging/wordWrap", on);
+    });
+    connect(m_ignoreWsBox, &QCheckBox::toggled, this, [this](bool on) {
+        m_ignoreWs = on;
+        QSettings().setValue("staging/ignoreWs", on);
+        reloadCurrentDiff();
+    });
+    {
+        // Same preference keys as the Changes tab, so the diff looks
+        // identical in both places.
+        const QSignalBlocker blockWrap(m_wrapBox);
+        const QSignalBlocker blockWs(m_ignoreWsBox);
+        m_wrapBox->setChecked(QSettings().value("staging/wordWrap", false).toBool());
+        m_ignoreWs = QSettings().value("staging/ignoreWs", false).toBool();
+        m_ignoreWsBox->setChecked(m_ignoreWs);
+        if (QSettings().value("staging/diffView", "unified").toString() == "sidebyside")
+            m_viewSideBtn->setChecked(true);
+        else
+            m_viewUnifiedBtn->setChecked(true);
+        m_diffStack->setCurrentIndex(m_viewSideBtn->isChecked() ? 1 : 0);
+        const bool wrapOn = m_wrapBox->isChecked();
+        m_diff->setLineWrapMode(wrapOn ? QPlainTextEdit::WidgetWidth : QPlainTextEdit::NoWrap);
+        m_sideDiff->setWordWrap(wrapOn);
+    }
     connect(tagBtn, &QPushButton::clicked, this, &HistoryWidget::createTagForSelected);
     connect(checkoutBtn, &QPushButton::clicked, this, &HistoryWidget::checkoutSelected);
     // NOTE: no selectionChanged connection — MainWindow refreshes us after
@@ -132,9 +189,11 @@ HistoryWidget::HistoryWidget(GitService *git, RepoManager *repos, QWidget *paren
 
 void HistoryWidget::refresh() {
     m_selectedOid.clear();
+    m_currentFile.clear();
     m_details->clear();
     m_files->clear();
     m_diff->setDiff({});
+    m_sideDiff->setDiff({});
     if (m_repos->selectedPath().isEmpty()) {
         updateEmptyLabel();
         return;
@@ -146,8 +205,22 @@ void HistoryWidget::refresh() {
     updateEmptyLabel();
 }
 
-void HistoryWidget::updateEmptyLabel() {
-    const bool empty = m_model->rowCount() == 0;
+void HistoryWidget::setUnifiedView() {
+    m_diffStack->setCurrentIndex(0);
+    QSettings().setValue("staging/diffView", "unified");
+}
+
+void HistoryWidget::setSideBySideView() {
+    m_diffStack->setCurrentIndex(1);
+    QSettings().setValue("staging/diffView", "sidebyside");
+}
+
+void HistoryWidget::reloadCurrentDiff() {
+    if (!m_currentFile.isEmpty() && !m_selectedOid.isEmpty())
+        onHistoryFileSelected();
+}
+
+void HistoryWidget::updateEmptyLabel() {    const bool empty = m_model->rowCount() == 0;
     m_emptyLabel->setText(m_search->text().trimmed().isEmpty() ? "No commits yet."
                                                               : "No matching commits.");
     m_emptyLabel->setVisible(empty);
@@ -337,6 +410,7 @@ void HistoryWidget::loadDetails(const QString &oid) {
                 item->setData(Qt::UserRole, f.path);
             }
             m_diff->setDiff({});
+            m_sideDiff->setDiff({});
         },
         [this](const QString &err) {
             emit busyChanged(false);
@@ -351,13 +425,19 @@ void HistoryWidget::onHistoryFileSelected() {
     const QString path = item->data(Qt::UserRole).toString();
     const QString repo = m_repos->selectedPath();
     const QString oid = m_selectedOid;
+    const bool ignoreWs = m_ignoreWs;
+    m_currentFile = path;
     runBackground<QString>(
-        this, [this, path] { return m_git->commitFileDiff(m_selectedOid, path, 3); },
+        this, [this, path, oid, ignoreWs] {
+            return m_git->commitFileDiff(oid, path, 3, -1, ignoreWs);
+        },
         [this, repo, oid, path](const QString &patch) {
             if (repo != m_repos->selectedPath() || oid != m_selectedOid)
                 return;
             m_diff->setDiff(patch);
             m_diff->setLanguageFromFile(path);
+            m_sideDiff->setDiff(patch);
+            m_sideDiff->setLanguageFromFile(path);
         },
         [this](const QString &err) { emit statusMessage(err, true); });
 }

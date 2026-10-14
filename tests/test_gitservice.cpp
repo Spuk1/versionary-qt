@@ -200,6 +200,50 @@ private slots:
         run({"branch", "-D", "rb-b"});
     }
 
+    void dotfileDiffsAndNormalize() {
+        QCOMPARE(GitService::normalizeRelPath(".gitignore"), QString(".gitignore"));
+        QCOMPARE(GitService::normalizeRelPath("./a.txt"), QString("a.txt"));
+        QCOMPARE(GitService::normalizeRelPath("/a.txt"), QString("a.txt"));
+        QCOMPARE(GitService::normalizeRelPath("sub/.env"), QString("sub/.env"));
+        QCOMPARE(GitService::normalizeRelPath("../x"), QString("../x"));
+        // A tracked dotfile with unstaged changes must diff (used to error
+        // because the leading dot was stripped, mangling the path).
+        QFile f(m_work + "/.gitignore");
+        QVERIFY(f.open(QIODevice::WriteOnly | QIODevice::Text));
+        f.write("*.log\n");
+        f.close();
+        GitRunner git;
+        QVERIFY(git.run({"add", ".gitignore"}, m_work).ok());
+        QVERIFY(git.run({"commit", "-m", "ignore"}, m_work).ok());
+        QFile f2(m_work + "/.gitignore");
+        QVERIFY(f2.open(QIODevice::Append | QIODevice::Text));
+        f2.write("*.tmp\n");
+        f2.close();
+        const FileDiff d = m_git->fileDiff(".gitignore", "HEAD", "WORKDIR");
+        QVERIFY2(d.ok, qPrintable(d.error));
+        QVERIFY(d.patch.contains("+*.tmp"));
+        // Whitespace-only change: visible without -w, hidden with -w.
+        QFile f3(m_work + "/a.txt");
+        QVERIFY(f3.open(QIODevice::ReadOnly | QIODevice::Text));
+        const QByteArray orig = f3.readAll();
+        f3.close();
+        QFile f4(m_work + "/a.txt");
+        QVERIFY(f4.open(QIODevice::WriteOnly | QIODevice::Text));
+        f4.write(orig.trimmed() + "  \n");
+        f4.close();
+        const FileDiff plain = m_git->fileDiff("a.txt", "HEAD", "WORKDIR");
+        QVERIFY(plain.ok);
+        QVERIFY(!plain.patch.trimmed().isEmpty());
+        QVERIFY(git.run({"add", "a.txt"}, m_work).ok());
+        QVERIFY(git.run({"commit", "-m", "ws only"}, m_work).ok());
+        const QString wsOid = m_git->commitLog(0, 1, "HEAD", {}, false).first().oid;
+        const QString withWs = m_git->commitFileDiff(wsOid, "a.txt", 3);
+        QVERIFY(!withWs.trimmed().isEmpty());
+        const QString noWs = m_git->commitFileDiff(wsOid, "a.txt", 3, -1, true);
+        QVERIFY2(noWs.trimmed().isEmpty(), qPrintable(noWs));
+        QVERIFY(git.run({"checkout", "--", ".gitignore"}, m_work).ok());
+    }
+
     void stashDiffFileLogAndBlame() {
         QFile f(m_work + "/a.txt");
         QVERIFY(f.open(QIODevice::Append | QIODevice::Text));

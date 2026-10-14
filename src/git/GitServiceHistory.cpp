@@ -102,15 +102,16 @@ CommitDetails GitService::commitDetails(const QString &oid) {
 }
 
 QString GitService::commitFileDiff(const QString &oid, const QString &filepath, int context,
-                                  int perParent) {
+                                  int perParent, bool ignoreWhitespace) {
     requireRepo();
     const QString rev = oid.trimmed();
-    QString fp = filepath.trimmed();
-    fp.remove(QRegularExpression(R"(^[./]+)"));
+    const QString fp = normalizeRelPath(filepath);
     if (rev.isEmpty() || fp.isEmpty())
         throw GitException("Invalid arguments");
-    QStringList args = {"show", "--no-color", "-U" + QString::number(context),
-                        "--pretty=format:"};
+    QStringList args = {"show", "--no-color", "-U" + QString::number(context)};
+    if (ignoreWhitespace)
+        args << "-w";
+    args << "--pretty=format:";
     if (perParent >= 0)
         args << "-m" << rev;
     else
@@ -154,8 +155,7 @@ FileDiff GitService::fileDiff(const QString &filepath, const QString &base,
                               const QString &target, int context, bool ignoreWhitespace) {
     requireRepo();
     FileDiff d;
-    QString fp = filepath.trimmed();
-    fp.remove(QRegularExpression(R"(^[./]+)"));
+    const QString fp = normalizeRelPath(filepath);
     if (fp.isEmpty() || fp.startsWith(".git/")) {
         d.error = "Invalid filepath";
         return d;

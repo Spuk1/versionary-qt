@@ -62,6 +62,15 @@ bool GitService::hasUncommittedChanges(const QString &path) {
     return r.ok() && !r.stdoutText.trimmed().isEmpty();
 }
 
+// Strips redundant "./" and leading "/" prefixes from repo-relative paths.
+// Must NOT eat leading dots: the old `^[./]+` turned ".gitignore" into
+// "gitignore", so every dotfile diff errored out.
+QString GitService::normalizeRelPath(const QString &path) {
+    QString fp = path.trimmed();
+    fp.remove(QRegularExpression(R"(^(\./|/)+)"));
+    return fp;
+}
+
 GitResult GitService::runOrThrow(const QStringList &args, const QProcessEnvironment &env,
                                  const QByteArray &input) {
     requireRepo();

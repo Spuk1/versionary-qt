@@ -149,8 +149,7 @@ QString GitService::stashDiff(const QString &ref) {
 
 QList<CommitInfo> GitService::fileLog(const QString &path, int limit) {
     requireRepo();
-    QString fp = path.trimmed();
-    fp.remove(QRegularExpression(R"(^[./]+)"));
+    const QString fp = normalizeRelPath(path);
     if (fp.isEmpty())
         throw GitException("Invalid filepath");
     const int bounded = qBound(1, limit, 500);
@@ -211,8 +210,7 @@ BlameLine parseBlamePorcelainBlock(const QStringList &lines, int &pos, int lineN
 
 QList<BlameLine> GitService::blame(const QString &path, const QString &rev) {
     requireRepo();
-    QString fp = path.trimmed();
-    fp.remove(QRegularExpression(R"(^[./]+)"));
+    const QString fp = normalizeRelPath(path);
     if (fp.isEmpty())
         throw GitException("Invalid filepath");
     const GitResult r =

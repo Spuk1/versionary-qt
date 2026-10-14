@@ -1,10 +1,14 @@
 #include "ui/HistoryWidget.h"
 #include "ui/MainWindow.h"
 #include "ui/RepoManager.h"
+#include "ui/SideBySideViewer.h"
 #include "ui/StagingWidget.h"
 
+#include <QCheckBox>
+#include <QPushButton>
 #include <QSettings>
 #include <QSplitter>
+#include <QStackedWidget>
 #include <QTemporaryFile>
 #include <QtTest/QtTest>
 
@@ -65,6 +69,31 @@ private slots:
         QVERIFY(s.startsWith("Fetched 1 of 3 repositories, 2 failed:"));
         QVERIFY(s.contains("b: boom"));
         QVERIFY(s.contains("c: bang"));
+    }
+
+    void historyDiffHasSameOptionsAsStaging() {
+        RepoManager repos;
+        HistoryWidget history(nullptr, &repos);
+        auto buttonNamed = [&](const char *text) {
+            for (QPushButton *b : history.findChildren<QPushButton *>()) {
+                if (b->text() == text)
+                    return b;
+            }
+            return static_cast<QPushButton *>(nullptr);
+        };
+        auto checkNamed = [&](const char *text) {
+            for (QCheckBox *c : history.findChildren<QCheckBox *>()) {
+                if (c->text() == text)
+                    return c;
+            }
+            return static_cast<QCheckBox *>(nullptr);
+        };
+        QVERIFY(buttonNamed("Unified") != nullptr);
+        QVERIFY(buttonNamed("Side-by-side") != nullptr);
+        QVERIFY(checkNamed("Wrap") != nullptr);
+        QVERIFY(checkNamed("Ignore ws") != nullptr);
+        QVERIFY(history.findChild<SideBySideViewer *>() != nullptr);
+        QVERIFY(history.findChild<QStackedWidget *>() != nullptr);
     }
 };
 

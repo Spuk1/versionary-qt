@@ -62,6 +62,8 @@ void RepoTabBar::rebuild() {
         const RepositoryEntry r = m_repos->repositories().at(repoIdx);
         auto *btn = new QPushButton(r.name, m_strip);
         btn->setProperty("tab", true);
+        // QSS ".tab" rules match the "class" property (like primary/danger).
+        btn->setProperty("class", "tab");
         btn->setProperty("repoPos", pos);
         btn->setToolTip(r.path);
         btn->setCheckable(true);

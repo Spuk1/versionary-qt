@@ -51,6 +51,33 @@ private slots:
         // Every button maps to a different repository (no "all zero").
         QCOMPARE(positions.size(), 3);
     }
+
+    void selectedTabIsMarked() {
+        QTemporaryDir tmp;
+        QVERIFY(tmp.isValid());
+        qputenv("VERSIONARY_STORAGE_DIR", (tmp.path() + "/.Versionary").toLatin1());
+        QVector<RepositoryEntry> repos;
+        for (const QString &name : {"alpha", "beta", "gamma"})
+            repos.append({name, "/tmp/" + name, {}, 0});
+        RepositoryStore::save(repos);
+
+        RepoManager mgr;
+        mgr.load();
+        RepoTabBar bar(&mgr);
+        // The ".tab" QSS rules (incl. the checked highlight) match the
+        // "class" property; without it the selected tab is invisible.
+        int checked = 0;
+        for (QPushButton *b : bar.findChildren<QPushButton *>()) {
+            if (!b->property("tab").toBool())
+                continue;
+            QCOMPARE(b->property("class").toString(), QString("tab"));
+            if (b->isChecked()) {
+                ++checked;
+                QCOMPARE(b->text(), mgr.selectedRepo().name);
+            }
+        }
+        QCOMPARE(checked, 1);
+    }
 };
 
 QTEST_MAIN(TestRepoTabBar)
