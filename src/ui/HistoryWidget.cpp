@@ -4,6 +4,7 @@
 #include "HistoryDelegate.h"
 #include "RepoManager.h"
 #include "SideBySideViewer.h"
+#include "git/DiffPatch.h"
 #include "git/GitService.h"
 #include "models/CommitGraph.h"
 #include "models/CommitLogModel.h"
@@ -87,6 +88,10 @@ HistoryWidget::HistoryWidget(GitService *git, RepoManager *repos, QWidget *paren
     m_files = new QListWidget(right);
     m_files->setMaximumHeight(140);
     auto *diffHeader = new QHBoxLayout();
+    m_diffFileLabel = new QLabel("No file selected", right);
+    m_diffFileLabel->setProperty("class", "muted");
+    m_diffFileLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    diffHeader->addWidget(m_diffFileLabel);
     diffHeader->addStretch();
     m_viewUnifiedBtn = new QPushButton("Unified", right);
     m_viewUnifiedBtn->setCheckable(true);
@@ -193,6 +198,7 @@ void HistoryWidget::refresh() {
     m_currentFile.clear();
     m_details->clear();
     m_files->clear();
+    m_diffFileLabel->setText("No file selected");
     m_diff->setDiff({});
     m_sideDiff->setDiff({});
     if (m_repos->selectedPath().isEmpty()) {
@@ -412,6 +418,7 @@ void HistoryWidget::loadDetails(const QString &oid) {
             }
             m_diff->setDiff({});
             m_sideDiff->setDiff({});
+            m_diffFileLabel->setText("No file selected");
         },
         [this](const QString &err) {
             emit busyChanged(false);
@@ -428,6 +435,7 @@ void HistoryWidget::onHistoryFileSelected() {
     const QString oid = m_selectedOid;
     const bool ignoreWs = m_ignoreWs;
     m_currentFile = path;
+    m_diffFileLabel->setText(path);
     runBackground<QString>(
         this, [this, path, oid, ignoreWs] {
             return m_git->commitFileDiff(oid, path, 3, -1, ignoreWs);
@@ -439,6 +447,8 @@ void HistoryWidget::onHistoryFileSelected() {
             m_diff->setLanguageFromFile(path);
             m_sideDiff->setDiff(patch);
             m_sideDiff->setLanguageFromFile(path);
+            const auto counts = DiffPatch::countChanges(patch);
+            m_diffFileLabel->setText(DiffPatch::fileTotalLabel(path, counts.first, counts.second));
         },
         [this](const QString &err) { emit statusMessage(err, true); });
 }

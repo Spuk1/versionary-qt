@@ -18,4 +18,8 @@ public:
     // Old/new file line numbers per block, for a GitHub-style gutter.
     // Headers and hunk markers map to (-1, -1) = blank.
     static QList<QPair<int, int>> hunkLineNumbers(const QStringList &blocks);
+    // Added/removed code line counts of a unified patch (headers excluded).
+    static QPair<int, int> countChanges(const QString &patch);
+    // "file  +N -M" label (parts with zero counts omitted).
+    static QString fileTotalLabel(const QString &file, int added, int removed);
 };

@@ -69,6 +69,7 @@ private:
     bool m_showAll = false;
     QTextEdit *m_details;
     QListWidget *m_files;
+    QLabel *m_diffFileLabel = nullptr;
     DiffViewer *m_diff;
     SideBySideViewer *m_sideDiff = nullptr;
     QStackedWidget *m_diffStack = nullptr;

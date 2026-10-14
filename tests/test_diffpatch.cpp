@@ -64,6 +64,23 @@ private slots:
         QCOMPARE(DiffPatch::filesInPatch({}), QStringList());
     }
 
+    void countsChanges() {
+        const QString patch = "diff --git a/f b/f\n--- a/f\n+++ b/f\n"
+                              "@@ -1,3 +1,3 @@\n ctx\n-old-a\n-old-b\n+new-a\n";
+        QCOMPARE(DiffPatch::countChanges(patch).first, 1);
+        QCOMPARE(DiffPatch::countChanges(patch).second, 2);
+        QCOMPARE(DiffPatch::countChanges({}).first, 0);
+        QCOMPARE(DiffPatch::countChanges({}).second, 0);
+        QCOMPARE(DiffPatch::countChanges("@@ -1 +1 @@\n").first, 0);
+    }
+
+    void fileTotalLabelCases() {
+        QCOMPARE(DiffPatch::fileTotalLabel("a.txt", 3, 1), QString("a.txt  +3 -1"));
+        QCOMPARE(DiffPatch::fileTotalLabel("a.txt", 2, 0), QString("a.txt  +2"));
+        QCOMPARE(DiffPatch::fileTotalLabel("a.txt", 0, 4), QString("a.txt  -4"));
+        QCOMPARE(DiffPatch::fileTotalLabel("a.txt", 0, 0), QString("a.txt"));
+    }
+
     void lineNumbersTrackHunks() {
         auto fmt = [](const QList<QPair<int, int>> &m) {
             QStringList out;

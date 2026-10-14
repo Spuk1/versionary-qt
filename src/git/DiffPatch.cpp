@@ -152,3 +152,28 @@ QList<QPair<int, int>> DiffPatch::hunkLineNumbers(const QStringList &blocks) {
     }
     return out;
 }
+
+QPair<int, int> DiffPatch::countChanges(const QString &patch) {
+    int added = 0;
+    int removed = 0;
+    for (const QString &line : patch.split('\n')) {
+        if (line.startsWith("+++") || line.startsWith("---"))
+            continue;
+        if (line.startsWith('+'))
+            ++added;
+        else if (line.startsWith('-'))
+            ++removed;
+    }
+    return qMakePair(added, removed);
+}
+
+QString DiffPatch::fileTotalLabel(const QString &file, int added, int removed) {
+    QStringList parts;
+    if (added > 0)
+        parts << QString("+%1").arg(added);
+    if (removed > 0)
+        parts << QString("-%1").arg(removed);
+    if (parts.isEmpty())
+        return file;
+    return file + "  " + parts.join(' ');
+}

@@ -7,6 +7,7 @@
 #include "FileHistoryDialog.h"
 #include "FileListDelegate.h"
 #include "RepoManager.h"
+#include "git/DiffPatch.h"
 #include "git/GitService.h"
 
 #include <QButtonGroup>
@@ -291,7 +292,12 @@ void StagingWidget::reloadCurrentDiff() {
 void StagingWidget::updateDiffHeader() {
     const bool hasFile = !m_currentFile.isEmpty();
     const bool staged = m_currentBucket == "staged";
-    m_diffFileLabel->setText(hasFile ? m_currentFile : "No file selected");
+    QString label = "No file selected";
+    if (hasFile) {
+        const auto counts = DiffPatch::countChanges(m_currentPatch);
+        label = DiffPatch::fileTotalLabel(m_currentFile, counts.first, counts.second);
+    }
+    m_diffFileLabel->setText(label);
     m_stageFileBtn->setVisible(!staged);
     m_stageFileBtn->setEnabled(hasFile);
     m_discardFileBtn->setText(staged ? "Unstage file" : "Discard file");
@@ -692,6 +698,7 @@ void StagingWidget::loadDiffFor(const QString &file, const QString &bucket) {
             if (path != m_repos->selectedPath() || file != m_currentFile)
                 return; // stale diff for another repo/file
             if (!d.ok) {
+                m_currentPatch.clear();
                 m_diff->setDiff({});
                 m_sideDiff->setDiff({});
                 updateDiffHeader();
