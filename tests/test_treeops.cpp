@@ -22,6 +22,20 @@ namespace {
 // Must match SourceTreeWidget.cpp roles/mime (tree item contract).
 constexpr int kRoleRef = Qt::UserRole + 1;
 const char *kBranchMime = "application/x-versionary-branch";
+
+QTreeWidgetItem *findLeafByRef(QTreeWidget *view, const QString &ref) {
+    QList<QTreeWidgetItem *> stack;
+    for (int i = 0; i < view->topLevelItemCount(); ++i)
+        stack << view->topLevelItem(i);
+    while (!stack.isEmpty()) {
+        QTreeWidgetItem *item = stack.takeFirst();
+        if (item->data(0, kRoleRef).toString() == ref)
+            return item;
+        for (int i = 0; i < item->childCount(); ++i)
+            stack << item->child(i);
+    }
+    return nullptr;
+}
 } // namespace
 
 class TestTreeOps : public QObject {
@@ -89,19 +103,7 @@ private slots:
         QTreeWidget *view = tree.findChild<QTreeWidget *>();
         QVERIFY(view);
 
-        auto findLeaf = [&](const QString &ref) {
-            QList<QTreeWidgetItem *> stack;
-            for (int i = 0; i < view->topLevelItemCount(); ++i)
-                stack << view->topLevelItem(i);
-            while (!stack.isEmpty()) {
-                QTreeWidgetItem *item = stack.takeFirst();
-                if (item->data(0, kRoleRef).toString() == ref)
-                    return item;
-                for (int i = 0; i < item->childCount(); ++i)
-                    stack << item->child(i);
-            }
-            return static_cast<QTreeWidgetItem *>(nullptr);
-        };
+        auto findLeaf = [&](const QString &ref) { return findLeafByRef(view, ref); };
         auto doubleClick = [&](QTreeWidgetItem *item) {
             view->expandAll();
             view->scrollToItem(item);
@@ -171,6 +173,69 @@ private slots:
         // re-arm new workers (refresh cascades), and a straggler would
         // dereference the freed widget/GitService (flaky teardown abort).
         // Mirrors MainWindow::~MainWindow.
+        for (int i = 0; i < 20; ++i) {
+            QThreadPool::globalInstance()->waitForDone(10000);
+            QTest::qWait(50);
+            if (QThreadPool::globalInstance()->activeThreadCount() == 0)
+                break;
+        }
+    }
+
+    // The checked-out branch keeps its check mark when fully in sync
+    // (empty badge map used to skip marking entirely).
+    void currentBranchMarkedWhenInSync() {
+        QTemporaryDir syncTmp;
+        QVERIFY(syncTmp.isValid());
+        GitRunner git;
+        auto run = [&](const QString &cwd, const QStringList &args) {
+            const GitResult r = git.run(args, cwd);
+            QVERIFY2(r.ok(), qPrintable(cwd + ": " + r.stderrText));
+        };
+        run(syncTmp.path(), {"init", "--bare", "-b", "main", "remote.git"});
+        const QString work = syncTmp.path() + "/work";
+        QDir().mkpath(work);
+        run(work, {"init", "-b", "main", "."});
+        run(work, {"config", "user.name", "T"});
+        run(work, {"config", "user.email", "t@t.t"});
+        run(work, {"remote", "add", "origin", syncTmp.path() + "/remote.git"});
+        QFile f(work + "/a.txt");
+        QVERIFY(f.open(QIODevice::WriteOnly | QIODevice::Text));
+        f.write("hi\n");
+        f.close();
+        run(work, {"add", "."});
+        run(work, {"commit", "-m", "init"});
+        run(work, {"push", "-u", "origin", "main"});
+        QCOMPARE(git.run({"status", "--porcelain", "-b"}, work).stdoutText.split('\n').first(),
+                 QString("## main...origin/main"));
+
+        AuthStore auth(syncTmp.path() + "/tokens.json");
+        SshStore ssh(syncTmp.path() + "/ssh.json");
+        ApiClient api;
+        GitService svc(&auth, &ssh, &api);
+        svc.setRepoPath(work);
+        // Fully in sync: the badge worker finds nothing to report.
+        QCOMPARE(svc.aheadBehind("main"), QString("0\t0"));
+
+        RepoManager mgr;
+        mgr.load();
+        mgr.addRepository(work);
+        QCOMPARE(mgr.selectedPath(), work);
+        SourceTreeWidget tree(&svc, &mgr);
+        tree.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&tree, 15000));
+        tree.refresh();
+        QTreeWidget *view = tree.findChild<QTreeWidget *>();
+        QVERIFY(view);
+        QTreeWidgetItem *leaf = nullptr;
+        for (int i = 0; i < 300; ++i) {
+            QTest::qWait(50);
+            leaf = findLeafByRef(view, "main");
+            if (leaf && leaf->text(0).startsWith(QString("✓")))
+                break;
+        }
+        QVERIFY2(leaf, "main branch leaf missing");
+        QVERIFY2(leaf->text(0).startsWith(QString("✓")),
+                 qPrintable("unmarked current branch: " + leaf->text(0)));
         for (int i = 0; i < 20; ++i) {
             QThreadPool::globalInstance()->waitForDone(10000);
             QTest::qWait(50);

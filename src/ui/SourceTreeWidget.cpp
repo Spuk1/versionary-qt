@@ -185,6 +185,11 @@ void SourceTreeWidget::loadAll() {
             }
             stashRoot->setExpanded(true);
             buildSubmoduleItems(new QTreeWidgetItem(m_tree, {"Submodules"}));
+            // Mark the checked-out branch immediately: the badge worker
+            // below may return an empty map (all in sync) or fail, and the
+            // check mark must not depend on either.
+            for (int i = 0; i < m_tree->topLevelItemCount(); ++i)
+                applyBadges(m_tree->topLevelItem(i), {}, m_currentHead);
             refreshBadges(path, local, remote);
         },
         [this](const QString &err) {
@@ -216,7 +221,7 @@ void SourceTreeWidget::refreshBadges(const QString &path, const QStringList &loc
             return suffixes;
         },
         [this, path](const QMap<QString, QString> &suffixes) {
-            if (path != m_repos->selectedPath() || suffixes.isEmpty())
+            if (path != m_repos->selectedPath())
                 return;
             for (int i = 0; i < m_tree->topLevelItemCount(); ++i)
                 applyBadges(m_tree->topLevelItem(i), suffixes, m_currentHead);
