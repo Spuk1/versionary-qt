@@ -33,6 +33,7 @@
 #include <QInputDialog>
 #include <QMessageBox>
 #include <QLabel>
+#include <QPushButton>
 #include <QSplitter>
 #include <QStatusBar>
 #include <QTabWidget>
@@ -73,6 +74,8 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
     centerLayout->setContentsMargins(6, 6, 6, 6);
     centerLayout->addWidget(m_tabs);
     auto *splitter = new QSplitter(Qt::Horizontal, center);
+    splitter->setObjectName("CenterSplitter");
+    m_centerSplitter = splitter;
     splitter->addWidget(m_sourceTree);
     m_rightTabs = new QTabWidget(center);
     m_rightTabs->addTab(m_staging, "Changes");
@@ -82,6 +85,33 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
     splitter->setStretchFactor(1, 3);
     splitter->setSizes({260, 1000});
     centerLayout->addWidget(splitter, 1);
+
+    m_emptyState = new QWidget(center);
+    auto *emptyLayout = new QVBoxLayout(m_emptyState);
+    emptyLayout->setAlignment(Qt::AlignCenter);
+    auto *emptyTitle = new QLabel("No repositories yet", m_emptyState);
+    emptyTitle->setAlignment(Qt::AlignCenter);
+    QFont titleFont = emptyTitle->font();
+    titleFont.setPointSize(titleFont.pointSize() + 4);
+    titleFont.setBold(true);
+    emptyTitle->setFont(titleFont);
+    auto *emptyHint = new QLabel("Open an existing repository or clone a new one.", m_emptyState);
+    emptyHint->setProperty("class", "muted");
+    emptyHint->setAlignment(Qt::AlignCenter);
+    auto *emptyBtns = new QHBoxLayout();
+    emptyBtns->setAlignment(Qt::AlignCenter);
+    auto *emptyOpen = new QPushButton("Open…", m_emptyState);
+    auto *emptyClone = new QPushButton("Clone…", m_emptyState);
+    emptyClone->setProperty("class", "primary");
+    emptyBtns->addWidget(emptyOpen);
+    emptyBtns->addWidget(emptyClone);
+    emptyLayout->addWidget(emptyTitle);
+    emptyLayout->addWidget(emptyHint);
+    emptyLayout->addLayout(emptyBtns);
+    centerLayout->addWidget(m_emptyState, 1);
+    m_emptyState->setVisible(false);
+    connect(emptyOpen, &QPushButton::clicked, this, &MainWindow::openRepository);
+    connect(emptyClone, &QPushButton::clicked, this, &MainWindow::openCloneDialog);
     setCentralWidget(center);
     statusBar()->showMessage("Ready");
     m_aheadBehindLabel = new QLabel("✓ in sync", this);
@@ -99,6 +129,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
     connect(toolbar, &ActionToolBar::settingsRequested, this, &MainWindow::openSettings);
 
     connect(m_repos, &RepoManager::selectionChanged, this, &MainWindow::onRepoSelected);
+    connect(m_repos, &RepoManager::repositoriesChanged, this, &MainWindow::updateEmptyState);
     connect(m_tabs, &RepoTabBar::renameRequested, this, [&](int idx) {
         const QString name = QInputDialog::getText(this, "Rename Repository", "Name:",
                                                    QLineEdit::Normal,
@@ -142,6 +173,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
     } else {
         onRepoSelected(m_repos->selectedIndex());
     }
+    updateEmptyState();
 
     // Deferred startup fetch, mirroring GitContext's 30s timer (shortened).
     QTimer::singleShot(30000, this, &MainWindow::doFetch);
@@ -159,7 +191,18 @@ MainWindow::~MainWindow() {
 
 void MainWindow::onRepoSelected(int index) {
     Q_UNUSED(index);
+    updateEmptyState();
     selectRepoAndRefresh(m_repos->selectedIndex());
+}
+
+void MainWindow::updateEmptyState() {
+    const bool empty = shouldShowEmptyState(m_repos->repositories().size());
+    if (m_emptyState)
+        m_emptyState->setVisible(empty);
+    if (m_tabs)
+        m_tabs->setVisible(!empty);
+    if (m_centerSplitter)
+        m_centerSplitter->setVisible(!empty);
 }
 
 void MainWindow::selectRepoAndRefresh(int index) {

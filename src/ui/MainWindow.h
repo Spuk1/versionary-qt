@@ -12,6 +12,7 @@ class HistoryWidget;
 class IdentityStore;
 class OAuthClient;
 class QLabel;
+class QSplitter;
 class QTabWidget;
 class RepoHeaderWidget;
 class RepoManager;
@@ -61,6 +62,7 @@ private slots:
 private:
     void selectRepoAndRefresh(int index);
     void refreshHead();
+    void updateEmptyState();
     bool ensureRepoSelected();
 
     ThemeManager *m_themes;
@@ -75,6 +77,8 @@ private:
     RepoHeaderWidget *m_header;
     RepoTabBar *m_tabs;
     QTabWidget *m_rightTabs = nullptr;
+    QSplitter *m_centerSplitter = nullptr;
+    QWidget *m_emptyState = nullptr;
     QLabel *m_aheadBehindLabel = nullptr;
     QLabel *m_fetchLabel = nullptr;
     QDateTime m_lastFetch;

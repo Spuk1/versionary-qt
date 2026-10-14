@@ -28,6 +28,12 @@ private slots:
         const QDateTime t(QDate(2026, 10, 14), QTime(9, 41));
         QCOMPARE(MainWindow::formatFetchTime(t), QString("Fetched 09:41"));
     }
+
+    void emptyStatePredicate() {
+        QVERIFY(MainWindow::shouldShowEmptyState(0));
+        QVERIFY(!MainWindow::shouldShowEmptyState(1));
+        QVERIFY(!MainWindow::shouldShowEmptyState(5));
+    }
 };
 
 QTEST_MAIN(TestStatusBar)
