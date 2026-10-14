@@ -48,6 +48,45 @@ private slots:
         QCOMPARE(v.selectedLines(), QSet<int>({6, 7}));
     }
 
+    void disabledModeLeavesTextSelectionAlone() {
+        DiffViewer v;
+        v.resize(400, 300);
+        v.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&v, 15000));
+        v.setDiff(kDiff);
+        v.setLineSelectionEnabled(false);
+        sendPress(&v, 6);
+        QVERIFY(v.selectedLines().isEmpty());
+        sendMove(&v, 7);
+        QVERIFY(v.selectedLines().isEmpty());
+        QVERIFY(v.textCursor().hasSelection()); // native drag selection works
+    }
+
+    void escClearsLineSelection() {
+        DiffViewer v;
+        v.resize(400, 300);
+        v.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&v, 15000));
+        v.setDiff(kDiff);
+        sendPress(&v, 6);
+        QVERIFY(!v.selectedLines().isEmpty());
+        QTest::keyClick(&v, Qt::Key_Escape);
+        QVERIFY(v.selectedLines().isEmpty());
+    }
+
+    void escClearsTextSelection() {
+        DiffViewer v;
+        v.resize(400, 300);
+        v.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&v, 15000));
+        v.setDiff(kDiff);
+        v.setLineSelectionEnabled(false);
+        v.selectAll();
+        QVERIFY(v.textCursor().hasSelection());
+        QTest::keyClick(&v, Qt::Key_Escape);
+        QVERIFY(!v.textCursor().hasSelection());
+    }
+
 private:
     static QPoint lineCenter(DiffViewer *v, int line) {
         const QTextBlock block = v->document()->findBlockByNumber(line - 1);

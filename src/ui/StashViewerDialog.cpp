@@ -59,6 +59,7 @@ StashViewerDialog::StashViewerDialog(const QString &ref, QWidget *parent)
     auto *splitter = new QSplitter(Qt::Horizontal, this);
     m_list = new QListWidget(splitter);
     m_viewer = new DiffViewer(splitter);
+    m_viewer->setLineSelectionEnabled(false);
     splitter->addWidget(m_list);
     splitter->addWidget(m_viewer);
     splitter->setStretchFactor(0, 1);

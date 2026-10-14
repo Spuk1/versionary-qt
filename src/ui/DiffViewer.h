@@ -44,6 +44,11 @@ public:
     // Language-aware token colors based on the file extension
     // (empty = plain diff colors, e.g. for multi-file patches).
     void setLanguageFromFile(const QString &filepath);
+    // +/- line selection for partial staging. Enabled by default; read-only
+    // viewers (history, stash, compare, file history) disable it so mouse
+    // drags do normal text selection for copying instead.
+    void setLineSelectionEnabled(bool on) { m_lineSelect = on; }
+    bool lineSelectionEnabled() const { return m_lineSelect; }
     QSet<int> selectedLines() const { return m_selected; }
     void clearSelection();
     int lineCount() const;
@@ -54,6 +59,7 @@ signals:
 protected:
     void resizeEvent(QResizeEvent *event) override;
     void wheelEvent(QWheelEvent *event) override;
+    void keyPressEvent(QKeyEvent *event) override;
 
 public:
     void paintMargin(QPaintEvent *event);
@@ -73,6 +79,7 @@ private:
     bool isSelectableLine(int lineNumber) const; // 1-based
     int lineNumberAt(int y) const;
 
+    bool m_lineSelect = true;
     QWidget *m_margin = nullptr;
     QString m_diff;
     QSet<int> m_selected;

@@ -2,6 +2,7 @@
 #include "ThemeColors.h"
 
 #include <QApplication>
+#include <QKeyEvent>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QRegularExpression>
@@ -412,6 +413,21 @@ void DiffViewer::wheelEvent(QWheelEvent *event) {
     QPlainTextEdit::wheelEvent(event);
 }
 
+void DiffViewer::keyPressEvent(QKeyEvent *event) {
+    // Esc clears the line selection and any text selection so the diff
+    // can be unselected without reaching for the mouse.
+    if (event->key() == Qt::Key_Escape && event->modifiers() == Qt::NoModifier
+        && (!m_selected.isEmpty() || textCursor().hasSelection())) {
+        clearSelection();
+        QTextCursor c = textCursor();
+        c.clearSelection();
+        setTextCursor(c);
+        event->accept();
+        return;
+    }
+    QPlainTextEdit::keyPressEvent(event);
+}
+
 void DiffViewer::updateMarginWidth() {
     setViewportMargins(static_cast<LineMargin *>(m_margin)->marginWidth(), 0, 0, 0);
 }
@@ -425,6 +441,8 @@ void DiffViewer::updateMargin(const QRect &rect, int dy) {
 
 bool DiffViewer::eventFilter(QObject *watched, QEvent *event) {
     if (watched == m_margin) {
+        if (!m_lineSelect)
+            return false;
         if (event->type() == QEvent::MouseButtonPress) {
             auto *me = static_cast<QMouseEvent *>(event);
             pressAtLine(lineNumberAt(me->pos().y()));
@@ -440,6 +458,10 @@ bool DiffViewer::eventFilter(QObject *watched, QEvent *event) {
         return false;
     }
     if (watched == viewport()) {
+        // Line selection hijacks mouse drags on +/- lines for partial
+        // staging; read-only viewers disable it for native text selection.
+        if (!m_lineSelect)
+            return QPlainTextEdit::eventFilter(watched, event);
         if (event->type() == QEvent::MouseButtonPress) {
             auto *me = static_cast<QMouseEvent *>(event);
             if (me->button() == Qt::LeftButton) {

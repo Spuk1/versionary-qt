@@ -107,6 +107,7 @@ HistoryWidget::HistoryWidget(GitService *git, RepoManager *repos, QWidget *paren
     diffHeader->addWidget(m_ignoreWsBox);
     m_diffStack = new QStackedWidget(right);
     m_diff = new DiffViewer(right);
+    m_diff->setLineSelectionEnabled(false);
     m_sideDiff = new SideBySideViewer(right);
     m_diffStack->addWidget(m_diff);
     m_diffStack->addWidget(m_sideDiff);

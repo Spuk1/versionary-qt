@@ -22,6 +22,7 @@ FileHistoryDialog::FileHistoryDialog(GitService *git, const QString &file,
         item->setToolTip(QString("%1 <%2>").arg(c.author.name, c.author.email));
     }
     m_diff = new DiffViewer(splitter);
+    m_diff->setLineSelectionEnabled(false);
     splitter->addWidget(m_log);
     splitter->addWidget(m_diff);
     splitter->setStretchFactor(0, 1);
