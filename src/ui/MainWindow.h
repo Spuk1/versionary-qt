@@ -78,7 +78,7 @@ private slots:
     void setBusy(bool busy);
     void watchBusyTimeout();
     void refreshAfterBranchChange();
-    void checkFocusFetch();
+    void onApplicationStateChanged(Qt::ApplicationState state);
 
 private:
     void selectRepoAndRefresh(int index);
