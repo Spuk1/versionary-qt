@@ -1,6 +1,7 @@
 #include "ui/DiffViewer.h"
 
 #include <QApplication>
+#include <QClipboard>
 #include <QMouseEvent>
 #include <QTextBlock>
 #include <QTextCursor>
@@ -87,6 +88,50 @@ private slots:
         QVERIFY(!v.textCursor().hasSelection());
     }
 
+    void copyStripsMarkers() {
+        DiffViewer v;
+        v.resize(400, 300);
+        v.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&v, 15000));
+        v.setDiff(kDiff);
+        selectBlocks(&v, 5, 7); // ctx, -old, +new
+        QCOMPARE(v.selectedCodeText(), QString("ctx\nold\nnew"));
+    }
+
+    void copySkipsHeaders() {
+        DiffViewer v;
+        v.resize(400, 300);
+        v.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&v, 15000));
+        v.setDiff(kDiff);
+        selectBlocks(&v, 1, 5); // diff, ---, +++, @@, ctx
+        QCOMPARE(v.selectedCodeText(), QString("ctx"));
+    }
+
+    void copyKeepsPartialFirstLineRaw() {        DiffViewer v;
+        v.resize(400, 300);
+        v.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&v, 15000));
+        v.setDiff(kDiff);
+        // Mid-line selection inside "-old": leading '-' is code here.
+        QTextCursor c(v.document()->findBlockByNumber(5));
+        c.setPosition(c.block().position() + 2);
+        c.setPosition(c.block().position() + 4, QTextCursor::KeepAnchor);
+        v.setTextCursor(c);
+        QCOMPARE(v.selectedCodeText(), QString("ld"));
+    }
+
+    void ctrlCCopiesStrippedCode() {
+        DiffViewer v;
+        v.resize(400, 300);
+        v.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&v, 15000));
+        v.setDiff(kDiff);
+        selectBlocks(&v, 5, 7); // ctx, -old, +new
+        QTest::keyClick(&v, Qt::Key_C, Qt::ControlModifier);
+        QCOMPARE(QApplication::clipboard()->text(), QString("ctx\nold\nnew"));
+    }
+
 private:
     static QPoint lineCenter(DiffViewer *v, int line) {
         const QTextBlock block = v->document()->findBlockByNumber(line - 1);
@@ -101,6 +146,13 @@ private:
         QMouseEvent ev(QEvent::MouseMove, lineCenter(v, line), Qt::NoButton, Qt::LeftButton,
                        Qt::NoModifier);
         QApplication::sendEvent(v->viewport(), &ev);
+    }
+    // Selects whole lines [firstLine, lastLine] (1-based, inclusive).
+    static void selectBlocks(DiffViewer *v, int firstLine, int lastLine) {
+        QTextCursor c(v->document()->findBlockByNumber(firstLine - 1));
+        c.setPosition(v->document()->findBlockByNumber(lastLine).position(),
+                      QTextCursor::KeepAnchor);
+        v->setTextCursor(c);
     }
 };
 

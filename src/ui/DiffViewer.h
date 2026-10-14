@@ -49,6 +49,9 @@ public:
     // drags do normal text selection for copying instead.
     void setLineSelectionEnabled(bool on) { m_lineSelect = on; }
     bool lineSelectionEnabled() const { return m_lineSelect; }
+    // Selected text with diff markers stripped (leading +/-/space removed,
+    // header lines dropped) so pasting yields plain code, not patch text.
+    QString selectedCodeText() const;
     QSet<int> selectedLines() const { return m_selected; }
     void clearSelection();
     int lineCount() const;
@@ -60,6 +63,7 @@ protected:
     void resizeEvent(QResizeEvent *event) override;
     void wheelEvent(QWheelEvent *event) override;
     void keyPressEvent(QKeyEvent *event) override;
+    void contextMenuEvent(QContextMenuEvent *event) override;
 
 public:
     void paintMargin(QPaintEvent *event);
@@ -74,6 +78,7 @@ private:
     void updateSelections();
     void pressAtLine(int line);
     void dragToLine(int line);
+    void copyCodeOnly();
 
 private:
     bool isSelectableLine(int lineNumber) const; // 1-based

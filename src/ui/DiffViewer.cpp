@@ -2,7 +2,10 @@
 #include "ThemeColors.h"
 
 #include <QApplication>
+#include <QAction>
+#include <QClipboard>
 #include <QKeyEvent>
+#include <QMenu>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QRegularExpression>
@@ -414,6 +417,14 @@ void DiffViewer::wheelEvent(QWheelEvent *event) {
 }
 
 void DiffViewer::keyPressEvent(QKeyEvent *event) {
+    // Copy yields plain code, never patch markers (see selectedCodeText).
+    if (event->matches(QKeySequence::Copy)) {
+        if (textCursor().hasSelection()) {
+            copyCodeOnly();
+            event->accept();
+            return;
+        }
+    }
     // Esc clears the line selection and any text selection so the diff
     // can be unselected without reaching for the mouse.
     if (event->key() == Qt::Key_Escape && event->modifiers() == Qt::NoModifier
@@ -426,6 +437,79 @@ void DiffViewer::keyPressEvent(QKeyEvent *event) {
         return;
     }
     QPlainTextEdit::keyPressEvent(event);
+}
+
+namespace {
+// A diff line at column 0 that carries no code (hunk/file headers).
+bool isHeaderLine(const QString &seg) {
+    return seg.startsWith("+++") || seg.startsWith("---") || seg.startsWith("@@")
+        || seg.startsWith("diff --git ") || seg.startsWith("index ");
+}
+} // namespace
+
+QString DiffViewer::selectedCodeText() const {
+    const QTextCursor cursor = textCursor();
+    if (!cursor.hasSelection())
+        return {};
+    const int start = cursor.selectionStart();
+    const int end = cursor.selectionEnd();
+    const QTextDocument *doc = document();
+    const QTextBlock startBlock = doc->findBlock(start);
+    const QTextBlock endBlock = doc->findBlock(end);
+    QStringList out;
+    for (QTextBlock b = startBlock; b.isValid(); b = b.next()) {
+        const bool first = (b == startBlock);
+        const bool last = (b == endBlock);
+        const int from = first ? start - b.position() : 0;
+        const int to = last ? end - b.position() : b.length();
+        const bool done = last;
+        if (to > from) {
+            QString seg = b.text().mid(from, to - from);
+            if (from == 0) {
+                if (isHeaderLine(seg)) {
+                    // not code: drop the line
+                } else {
+                    if (!seg.isEmpty()
+                        && (seg.at(0) == '+' || seg.at(0) == '-' || seg.at(0) == ' '))
+                        seg = seg.mid(1);
+                    out << seg;
+                }
+            } else {
+                out << seg; // mid-line partial: markers not included
+            }
+        } else if (!last) {
+            out << QString(); // blank line inside the selection
+        }
+        if (done)
+            break;
+    }
+    return out.join('\n');
+}
+
+void DiffViewer::copyCodeOnly() {
+    const QString code = selectedCodeText();
+    if (!code.isEmpty()) {
+        if (QClipboard *cb = QApplication::clipboard())
+            cb->setText(code);
+    }
+}
+
+void DiffViewer::contextMenuEvent(QContextMenuEvent *event) {
+    QMenu *menu = QPlainTextEdit::createStandardContextMenu(event->pos());
+    // Point the standard Copy entry at the marker-stripping copier.
+    for (QAction *a : menu->actions()) {
+        if (a->shortcut() == QKeySequence::Copy) {
+            auto *code = new QAction(a->icon(), a->text(), menu);
+            code->setShortcut(a->shortcut());
+            connect(code, &QAction::triggered, this, &DiffViewer::copyCodeOnly);
+            menu->insertAction(a, code);
+            menu->removeAction(a);
+            delete a;
+            break;
+        }
+    }
+    menu->setAttribute(Qt::WA_DeleteOnClose);
+    menu->popup(event->globalPos());
 }
 
 void DiffViewer::updateMarginWidth() {
