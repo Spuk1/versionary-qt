@@ -15,6 +15,12 @@ private slots:
     }
     void garbageFallsBack() { QCOMPARE(StashUtils::toRefIdx("nope", 7), 7); }
     void intOverload() { QCOMPARE(StashUtils::toRefIdx(5), 5); }
+    void listFragments() {
+        QCOMPARE(StashUtils::toRefIdx("{0}: WIP on main: abc"), 0);
+        QCOMPARE(StashUtils::toRefIdx("{2}: WIP on main: def"), 2);
+        QCOMPARE(StashUtils::toRefName("{2}: WIP on main: def"), QString("stash@{2}"));
+        QCOMPARE(StashUtils::toRefName("stash@{1}"), QString("stash@{1}"));
+    }
 };
 
 QTEST_MAIN(TestStashUtils)

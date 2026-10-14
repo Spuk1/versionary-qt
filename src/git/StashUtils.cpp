@@ -15,5 +15,15 @@ int StashUtils::toRefIdx(const QString &input, int fallback) {
                                           QRegularExpression::CaseInsensitiveOption);
     if (alias.match(s).hasMatch())
         return 0;
+    // Fragments from `git stash list` split on "stash@" look like
+    // "{N}: WIP on <branch>: ...". Without this, every stash resolves to
+    // the fallback (usually 0) and all stash actions hit the newest entry.
+    static const QRegularExpression listFrag(R"(^\{\s*(\d+)\s*\})");
+    if (auto m = listFrag.match(s); m.hasMatch())
+        return m.captured(1).toInt();
     return fallback;
+}
+
+QString StashUtils::toRefName(const QString &input) {
+    return QString("stash@{%1}").arg(toRefIdx(input));
 }

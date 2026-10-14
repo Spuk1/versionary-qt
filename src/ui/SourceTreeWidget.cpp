@@ -2,6 +2,7 @@
 #include "AsyncHelper.h"
 #include "DiffViewer.h"
 #include "RepoManager.h"
+#include "StashViewerDialog.h"
 #include "ThemeColors.h"
 #include "git/GitService.h"
 #include "git/StashUtils.h"
@@ -18,6 +19,7 @@
 #include <QMessageBox>
 #include <QMimeData>
 #include <QMouseEvent>
+#include <QPointer>
 #include <QStyle>
 #include <QTreeWidget>
 #include <QUrl>
@@ -240,13 +242,7 @@ void SourceTreeWidget::onItemDoubleClicked(QTreeWidgetItem *item, int) {    cons
     else if (kind == "submodule")
         openSubmoduleAsRepo(ref);
     else if (kind == "stash")
-        runBackgroundVoid(
-            this, [this, ref] { m_git->popStash(ref); },
-            [&] {
-                emit stashChanged();
-                refresh();
-            },
-            [&](const QString &e) { emit statusMessage(e, true); });
+        popStashRef(ref);
 }
 
 void SourceTreeWidget::openSubmoduleAsRepo(const QString &relPath) {
@@ -374,15 +370,80 @@ void SourceTreeWidget::checkoutCommit(const QString &oid) {
 }
 
 void SourceTreeWidget::showStashDiff(const QString &ref, const QString &patch) {
-    auto *dlg = new QDialog(this);
+    auto *dlg = new StashViewerDialog(ref, this);
     dlg->setAttribute(Qt::WA_DeleteOnClose);
-    dlg->setWindowTitle("Stash diff — " + ref.trimmed().left(60));
-    dlg->resize(700, 500);
-    auto *layout = new QVBoxLayout(dlg);
-    auto *viewer = new DiffViewer(dlg);
-    viewer->setDiff(patch);
-    layout->addWidget(viewer);
+    QPointer<StashViewerDialog> guard(dlg);
+    const QString path = m_repos->selectedPath();
+    const QString refName = StashUtils::toRefName(ref);
+    connect(dlg, &StashViewerDialog::applyFileRequested, this,
+            &SourceTreeWidget::applyStashFileRef);
+    connect(dlg, &StashViewerDialog::popRequested, this, [this, guard](const QString &r) {
+        runBackgroundVoid(
+            this, [this, r] { m_git->popStash(r); },
+            [this, guard] {
+                emit stashChanged();
+                refresh();
+                if (guard)
+                    guard->close();
+            },
+            [&](const QString &e) { emit statusMessage(e, true); });
+    });
+    connect(dlg, &StashViewerDialog::dropRequested, this, [this, guard](const QString &r) {
+        if (QMessageBox::question(this, "Drop Stash", "Drop this stash?") != QMessageBox::Yes)
+            return;
+        runBackgroundVoid(
+            this, [this, r] { m_git->dropStash(r); },
+            [this, guard] {
+                emit stashChanged();
+                refresh();
+                if (guard)
+                    guard->close();
+            },
+            [&](const QString &e) { emit statusMessage(e, true); });
+    });
     dlg->show();
+    runBackground<CommitDetails>(
+        this, [this, refName] { return m_git->commitDetails(refName); },
+        [this, guard, path, patch](const CommitDetails &details) {
+            if (!guard || path != m_repos->selectedPath())
+                return;
+            guard->setStashContent(details, patch);
+        },
+        [this, guard, path, patch](const QString &) {
+            // Details unavailable: still show the full patch.
+            if (!guard || path != m_repos->selectedPath())
+                return;
+            guard->setStashContent(CommitDetails{}, patch);
+        });
+}
+
+void SourceTreeWidget::popStashRef(const QString &ref) {
+    runBackgroundVoid(
+        this, [this, ref] { m_git->popStash(ref); },
+        [&] {
+            emit stashChanged();
+            refresh();
+        },
+        [&](const QString &e) { emit statusMessage(e, true); });
+}
+
+void SourceTreeWidget::dropStashRef(const QString &ref) {
+    if (QMessageBox::question(this, "Drop Stash", "Drop this stash?") != QMessageBox::Yes)
+        return;
+    runBackgroundVoid(
+        this, [this, ref] { m_git->dropStash(ref); },
+        [&] {
+            emit stashChanged();
+            refresh();
+        },
+        [&](const QString &e) { emit statusMessage(e, true); });
+}
+
+void SourceTreeWidget::applyStashFileRef(const QString &ref, const QString &file) {
+    runBackgroundVoid(
+        this, [this, ref, file] { m_git->applyStashFile(ref, file); },
+        [&] { emit statusMessage("Applied " + file, false); },
+        [&](const QString &e) { emit statusMessage(e, true); });
 }
 
 bool SourceTreeWidget::eventFilter(QObject *watched, QEvent *event) {
@@ -499,15 +560,7 @@ void SourceTreeWidget::onContextMenu(const QPoint &pos) {
                 this, [this, ref] { m_git->applyStash(ref); }, [&] { emit stashChanged(); },
                 [&](const QString &e) { emit statusMessage(e, true); });
         });
-        menu.addAction("Pop (apply + drop)", [&] {
-            runBackgroundVoid(
-                this, [this, ref] { m_git->popStash(ref); },
-                [&] {
-                    emit stashChanged();
-                    refresh();
-                },
-                [&](const QString &e) { emit statusMessage(e, true); });
-        });
+        menu.addAction("Pop (apply + drop)", [&] { popStashRef(ref); });
         menu.addAction("Rename…", [&] {
             const QString name = QInputDialog::getText(this, "Rename Stash", "New message:");
             if (name.trimmed().isEmpty())
@@ -520,18 +573,7 @@ void SourceTreeWidget::onContextMenu(const QPoint &pos) {
                 },
                 [&](const QString &e) { emit statusMessage(e, true); });
         });
-        menu.addAction("Drop", [&] {
-            if (QMessageBox::question(this, "Drop Stash", "Drop this stash?")
-                != QMessageBox::Yes)
-                return;
-            runBackgroundVoid(
-                this, [this, ref] { m_git->dropStash(ref); },
-                [&] {
-                    emit stashChanged();
-                    refresh();
-                },
-                [&](const QString &e) { emit statusMessage(e, true); });
-        });
+        menu.addAction("Drop", [&] { dropStashRef(ref); });
         menu.exec(global);
     } else if (kind == "submodule") {
         menu.addAction("Open as repository", [&] { openSubmoduleAsRepo(ref); });

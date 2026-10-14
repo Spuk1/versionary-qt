@@ -13,6 +13,7 @@
 #include "ui/QuickOpenDialog.h"
 #include "ui/SettingsDialog.h"
 #include "ui/StashDialog.h"
+#include "ui/StashViewerDialog.h"
 #include "ui/ThemeManager.h"
 
 #include <QTemporaryDir>
@@ -43,9 +44,10 @@ private slots:
         BlameDialog blame("a.txt", {});
         FileHistoryDialog history(nullptr, "a.txt", {});
         QuickOpenDialog quick({{"demo", "/tmp/demo"}});
+        StashViewerDialog stashViewer("{0}: WIP on main");
         const QList<QDialog *> dialogs = {&stash, &branch, &clone, &settings,
                                                 &onboarding, &conflict, &blame, &history,
-                                                &quick};
+                                                &quick, &stashViewer};
         for (QDialog *dlg : dialogs) {
             dlg->show();
             QVERIFY(QTest::qWaitForWindowExposed(dlg, 15000));

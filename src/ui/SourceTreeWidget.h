@@ -52,6 +52,9 @@ private:
     void createPr(const QString &branch);
     void checkoutCommit(const QString &oid);
     void showStashDiff(const QString &ref, const QString &patch);
+    void popStashRef(const QString &ref);
+    void dropStashRef(const QString &ref);
+    void applyStashFileRef(const QString &ref, const QString &file);
 
     GitService *m_git;
     RepoManager *m_repos;
