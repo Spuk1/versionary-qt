@@ -52,6 +52,27 @@ QString envOrDotEnv(const char *name, const char *baked = "") {
     return dotEnvCache().value(name);
 }
 
+// New canonical names use the VERSIONARY_ prefix. The pre-1.0 names
+// (GITHUB_CLIENT_ID, CLIENT_GITHUB_SECRET, …) are still honored as a
+// fallback so existing ~/.Versionary/.env files keep working.
+// Precedence: new env > legacy env > baked > new .env > legacy .env.
+QString envOrDotEnvWithLegacy(const char *name, const char *legacyName, const char *baked = "") {
+    const auto sysEnv = QProcessEnvironment::systemEnvironment();
+    QString v = sysEnv.value(name);
+    if (!v.isEmpty())
+        return v;
+    v = sysEnv.value(legacyName);
+    if (!v.isEmpty())
+        return v;
+    if (baked && *baked)
+        return QString::fromLatin1(baked);
+    const auto &cache = dotEnvCache();
+    v = cache.value(name);
+    if (!v.isEmpty())
+        return v;
+    return cache.value(legacyName);
+}
+
 // Build-time baked credentials, e.g.
 // -DVERSIONARY_GITHUB_CLIENT_ID="Ov23...". Empty unless the packager sets them.
 #ifdef VERSIONARY_GITHUB_CLIENT_ID
@@ -108,12 +129,30 @@ QString AppConfig::userDataDir() {
 QString AppConfig::tokensPath() { return userDataDir() + "/tokens.json"; }
 QString AppConfig::sshSettingsPath() { return userDataDir() + "/ssh-settings.json"; }
 
-QString AppConfig::githubClientId() { return envOrDotEnv("GITHUB_CLIENT_ID", kBakedGithubId); }
-QString AppConfig::bitbucketClientId() { return envOrDotEnv("BITBUCKET_CLIENT_ID", kBakedBitbucketId); }
-QString AppConfig::bitbucketClientSecret() { return envOrDotEnv("CLIENT_BITBUCKET_SECRET", kBakedBitbucketSecret); }
-QString AppConfig::githubClientSecret() { return envOrDotEnv("CLIENT_GITHUB_SECRET", kBakedGithubSecret); }
-QString AppConfig::gitlabClientId() { return envOrDotEnv("GITLAB_CLIENT_ID", kBakedGitlabId); }
-QString AppConfig::gitlabClientSecret() { return envOrDotEnv("CLIENT_GITLAB_SECRET", kBakedGitlabSecret); }
+QString AppConfig::githubClientId() {
+    return envOrDotEnvWithLegacy(
+        "VERSIONARY_GITHUB_CLIENT_ID", "GITHUB_CLIENT_ID", kBakedGithubId);
+}
+QString AppConfig::bitbucketClientId() {
+    return envOrDotEnvWithLegacy(
+        "VERSIONARY_BITBUCKET_CLIENT_ID", "BITBUCKET_CLIENT_ID", kBakedBitbucketId);
+}
+QString AppConfig::bitbucketClientSecret() {
+    return envOrDotEnvWithLegacy("VERSIONARY_BITBUCKET_CLIENT_SECRET",
+                                 "CLIENT_BITBUCKET_SECRET", kBakedBitbucketSecret);
+}
+QString AppConfig::githubClientSecret() {
+    return envOrDotEnvWithLegacy("VERSIONARY_GITHUB_CLIENT_SECRET",
+                                 "CLIENT_GITHUB_SECRET", kBakedGithubSecret);
+}
+QString AppConfig::gitlabClientId() {
+    return envOrDotEnvWithLegacy(
+        "VERSIONARY_GITLAB_CLIENT_ID", "GITLAB_CLIENT_ID", kBakedGitlabId);
+}
+QString AppConfig::gitlabClientSecret() {
+    return envOrDotEnvWithLegacy("VERSIONARY_GITLAB_CLIENT_SECRET",
+                                 "CLIENT_GITLAB_SECRET", kBakedGitlabSecret);
+}
 
 void AppConfig::ensureStorageDir() {
     QDir().mkpath(storageDir());

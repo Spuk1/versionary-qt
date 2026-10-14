@@ -131,7 +131,7 @@ ApiClient::BitbucketTokens ApiClient::refreshBitbucket(const QString &clientId,
                                                        const QString &refreshToken) {
     if (clientId.isEmpty() || clientSecret.isEmpty())
         throw std::runtime_error(
-            "Bitbucket client credentials missing for refresh. Ensure BITBUCKET_CLIENT_ID and CLIENT_BITBUCKET_SECRET are set.");
+            "Bitbucket client credentials missing for refresh. Ensure VERSIONARY_BITBUCKET_CLIENT_ID and VERSIONARY_BITBUCKET_CLIENT_SECRET are set.");
     QUrlQuery form;
     form.addQueryItem("grant_type", "refresh_token");
     form.addQueryItem("refresh_token", refreshToken);

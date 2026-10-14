@@ -1,5 +1,9 @@
 cmake_minimum_required(VERSION 3.21)
-project(Versionary VERSION 1.0.0 LANGUAGES CXX)
+# Overridable by CI releases: cmake -DVERSIONARY_VERSION=1.2.3
+if(NOT DEFINED VERSIONARY_VERSION OR VERSIONARY_VERSION STREQUAL "")
+  set(VERSIONARY_VERSION 1.0.0)
+endif()
+project(Versionary VERSION ${VERSIONARY_VERSION} LANGUAGES CXX)
 add_compile_definitions(VERSIONARY_VERSION="${PROJECT_VERSION}")
 
 # Optional build-time OAuth credentials (packagers). Exported environment

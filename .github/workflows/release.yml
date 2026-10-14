@@ -1,0 +1,212 @@
+name: Release
+
+# How a release happens (see docs/RELEASING.md):
+#   Option A (recommended): Actions tab -> Release -> Run workflow -> pick
+#             bump=patch|minor|major. The workflow computes the next version
+#             from the highest vX.Y.Z tag, pushes that tag, builds all
+#             platforms, and publishes the GitHub Release.
+#   Option B: push a tag yourself:  git tag v1.2.3 && git push origin v1.2.3
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: "Which part to increment from the latest vX.Y.Z tag"
+        type: choice
+        default: patch
+        options: [patch, minor, major]
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write # needed to push the auto-created tag + publish the Release
+
+env:
+  QT_VERSION: "6.8.3"
+
+jobs:
+  # ---- Resolve the version for this run ---------------------------------
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.resolve.outputs.version }}
+      created_tag: ${{ steps.resolve.outputs.created_tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - id: resolve
+        run: |
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+            echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+            echo "created_tag=false" >> "$GITHUB_OUTPUT"
+            echo "Release from pushed tag ${GITHUB_REF_NAME}"
+          else
+            BUMP="${{ inputs.bump || 'patch' }}"
+            LATEST=$(git tag --list 'v*.*.*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n1)
+            LATEST=${LATEST:-v0.0.0}
+            NUMS=${LATEST#v}
+            IFS='.' read -r MA MI PA <<< "$NUMS"
+            case "$BUMP" in
+              major) MA=$((MA+1)); MI=0; PA=0;;
+              minor) MI=$((MI+1)); PA=0;;
+              *)     PA=$((PA+1));;
+            esac
+            VERSION="$MA.$MI.$PA"
+            echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+            echo "created_tag=true" >> "$GITHUB_OUTPUT"
+            git tag "v$VERSION"
+            git push origin "v$VERSION"
+            echo "Created and pushed tag v$VERSION (bump=$BUMP from $LATEST)"
+          fi
+
+  # ---- Build + package per OS --------------------------------------------
+  build:
+    needs: version
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: "Linux",   runner: ubuntu-22.04,  os: linux }
+          - { name: "Windows", runner: windows-2022,  os: windows }
+          - { name: "macOS",   runner: macos-14,      os: macos }
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # When version job created the tag, it points at main's HEAD,
+          # which is what we just checked out — build that exact code.
+          fetch-depth: 0
+
+      - name: Install Qt 6
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          cache: true
+
+      - name: Install Linux build deps
+        if: matrix.os == 'linux'
+        run: >
+          sudo apt-get update &&
+          sudo apt-get install -y ninja-build libgl1-mesa-dev libxkbcommon-x11-0
+          libxcb-cursor0 file fuse libfuse2
+
+      - name: Configure (OAuth keys baked in from secrets)
+        shell: bash
+        run: >
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          "-DVERSIONARY_VERSION=${{ needs.version.outputs.version }}"
+          "-DVERSIONARY_GITHUB_CLIENT_ID=${{ secrets.VERSIONARY_GITHUB_CLIENT_ID }}"
+          "-DVERSIONARY_GITHUB_CLIENT_SECRET=${{ secrets.VERSIONARY_GITHUB_CLIENT_SECRET }}"
+          "-DVERSIONARY_BITBUCKET_CLIENT_ID=${{ secrets.VERSIONARY_BITBUCKET_CLIENT_ID }}"
+          "-DVERSIONARY_BITBUCKET_CLIENT_SECRET=${{ secrets.VERSIONARY_BITBUCKET_CLIENT_SECRET }}"
+          "-DVERSIONARY_GITLAB_CLIENT_ID=${{ secrets.VERSIONARY_GITLAB_CLIENT_ID }}"
+          "-DVERSIONARY_GITLAB_CLIENT_SECRET=${{ secrets.VERSIONARY_GITLAB_CLIENT_SECRET }}"
+
+      - name: Build
+        run: cmake --build build --config Release -j
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure -C Release
+
+      # ---- Linux: AppImage (portable) ------------------------------------
+      - name: Package (Linux AppImage)
+        if: matrix.os == 'linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          V="${{ needs.version.outputs.version }}"
+          curl -fsSL -o /tmp/linuxdeploy \
+            https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+          curl -fsSL -o /tmp/linuxdeploy-plugin-qt \
+            https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage
+          chmod +x /tmp/linuxdeploy /tmp/linuxdeploy-plugin-qt
+          mkdir -p AppDir/usr/bin AppDir/usr/share/applications AppDir/usr/share/icons/hicolor/256x256/apps
+          cp build/Versionary AppDir/usr/bin/
+          cp packaging/io.github.spuk1.Versionary.desktop AppDir/usr/share/applications/
+          cp packaging/icons/hicolor/256x256/apps/io.github.spuk1.Versionary.png \
+             AppDir/usr/share/icons/hicolor/256x256/apps/
+          export APPIMAGE_EXTRACT_AND_RUN=1
+          export QMAKE="$(which qmake6 || which qmake)"  # help plugin-qt find Qt
+          /tmp/linuxdeploy --appdir AppDir \
+            --desktop-file AppDir/usr/share/applications/io.github.spuk1.Versionary.desktop \
+            --icon-file AppDir/usr/share/icons/hicolor/256x256/apps/io.github.spuk1.Versionary.png \
+            --plugin qt \
+            --output appimage
+          mv Versionary-*.AppImage "Versionary-${V}-Linux-x86_64.AppImage"
+          # Fallback tarball (binary + desktop integration, needs system Qt 6)
+          tar czf "Versionary-${V}-Linux-x86_64.tar.gz" -C build Versionary \
+            -C .. packaging/io.github.spuk1.Versionary.desktop README.md
+
+      # ---- Windows: windeployqt + zip -------------------------------------
+      - name: Package (Windows zip)
+        if: matrix.os == 'windows'
+        shell: pwsh
+        run: |
+          $V = "${{ needs.version.outputs.version }}"
+          cmake --install build --prefix dist --config Release
+          windeployqt dist\bin\Versionary.exe --release --no-translations --no-opengl-sw
+          Compress-Archive -Path dist\* -DestinationPath "Versionary-$V-Windows-x86_64.zip"
+
+      # ---- macOS: macdeployqt + DMG ---------------------------------------
+      - name: Package (macOS dmg)
+        if: matrix.os == 'macos'
+        shell: bash
+        run: |
+          set -euo pipefail
+          V="${{ needs.version.outputs.version }}"
+          cmake --install build --prefix dist --config Release
+          # qt_add_executable makes dist/bin/Versionary; reshape into .app for macdeployqt
+          mkdir -p "Versionary.app/Contents/MacOS" "Versionary.app/Contents/Resources"
+          cp dist/bin/Versionary "Versionary.app/Contents/MacOS/Versionary"
+          cp packaging/icons/hicolor/256x256/apps/io.github.spuk1.Versionary.png \
+             "Versionary.app/Contents/Resources/icon.png"
+          cat > "Versionary.app/Contents/Info.plist" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>CFBundleExecutable</key><string>Versionary</string>
+            <key>CFBundleIdentifier</key><string>io.github.spuk1.Versionary</string>
+            <key>CFBundleName</key><string>Versionary</string>
+            <key>CFBundleVersion</key><string>${V}</string>
+            <key>CFBundleShortVersionString</key><string>${V}</string>
+            <key>CFBundlePackageType</key><string>APPL</string>
+            <key>CFBundleIconFile</key><string>icon</string>
+            <key>NSHighResolutionCapable</key><true/>
+          </dict></plist>
+          EOF
+          macdeployqt "Versionary.app" -dmg
+          mv Versionary.dmg "Versionary-${V}-macOS-arm64.dmg"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.os }}-package
+          path: |
+            Versionary-*-Linux-*
+            Versionary-*-Windows-*
+            Versionary-*-macOS-*
+          if-no-files-found: error
+
+  # ---- Publish the GitHub Release -----------------------------------------
+  publish:
+    needs: [version, build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+          path: dist
+
+      - name: Publish Release v${{ needs.version.outputs.version }}
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ needs.version.outputs.version }}
+          name: Versionary v${{ needs.version.outputs.version }}
+          files: dist/*
+          generate_release_notes: true

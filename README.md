@@ -5,6 +5,14 @@ a free open-source Git GUI client. Same features as the Electron/React
 client, without the Chromium runtime: faster startup, lower memory use,
 and native look and feel.
 
+## Download
+
+Grab the latest installer for Linux (AppImage), Windows (zip), or macOS
+(DMG) from the
+[Releases page](https://github.com/Spuk1/versionary-qt/releases).
+Maintainers: see [docs/RELEASING.md](docs/RELEASING.md) for how releases
+are built and versioned.
+
 ## Features (parity with the Electron client)
 
 - Multi-repository tabs with drag-reorder, rename, close
@@ -55,7 +63,9 @@ OAuth keys are read from `~/.Versionary/.env` (same names as `.env`).
 
 Resolution order (first hit wins):
 
-1. Process environment (`GITHUB_CLIENT_ID`, …) — highest priority.
+1. Process environment (`VERSIONARY_GITHUB_CLIENT_ID`, …) — highest priority.
+   Legacy pre-1.0 names (`GITHUB_CLIENT_ID`, `CLIENT_GITHUB_SECRET`, …)
+   still work as a fallback.
 2. Build-time baked values for packaged builds:
    `cmake -DVERSIONARY_GITHUB_CLIENT_ID=… […]`. The AUR `PKGBUILD`
    reads them from the environment or a dotenv-style `.env` placed next

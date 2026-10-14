@@ -254,7 +254,7 @@ OAuthClient::TokenResult OAuthClient::oauthGithub(const QString &clientId,
 OAuthClient::TokenResult OAuthClient::oauthBitbucket(const QString &clientId,
                                                     const QString &clientSecret) {
     if (clientSecret.isEmpty())
-        throw std::runtime_error("Bitbucket client secret missing. Set CLIENT_BITBUCKET_SECRET in your .env");
+        throw std::runtime_error("Bitbucket client secret missing. Set VERSIONARY_BITBUCKET_CLIENT_SECRET in your .env");
     const QString state = randomBase64Url(16);
     const QString verifier = randomBase64Url(32);
     // No scope param: scopes live on the OAuth consumer.
@@ -291,7 +291,7 @@ OAuthClient::TokenResult OAuthClient::oauthBitbucket(const QString &clientId,
 OAuthClient::TokenResult OAuthClient::oauthGitlab(const QString &clientId,
                                                  const QString &clientSecret) {
     if (clientSecret.isEmpty())
-        throw std::runtime_error("GitLab client secret missing. Set CLIENT_GITLAB_SECRET in your .env");
+        throw std::runtime_error("GitLab client secret missing. Set VERSIONARY_GITLAB_CLIENT_SECRET in your .env");
     const QString state = randomBase64Url(16);
     const QString verifier = randomBase64Url(32);
     const QUrl authUrl = buildAuthUrl("https://gitlab.com/oauth/authorize", clientId,
