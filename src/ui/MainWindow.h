@@ -40,6 +40,8 @@ public:
     explicit MainWindow(QWidget *parent = nullptr);
     ~MainWindow() override;
 
+    bool isBusy() const { return m_busyCount > 0; }
+
     // Pure helpers (unit-tested): "behind\tahead" → "↑n ↓m" / "✓ in sync".
     static QString formatAheadBehind(int ahead, int behind);
     static QString parseAheadBehindResult(const QString &result);

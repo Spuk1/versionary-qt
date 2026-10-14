@@ -521,15 +521,15 @@ void MainWindow::doPull() {
 void MainWindow::doPush() {
     if (!ensureRepoSelected())
         return;
-    m_headerAction = "pushing";
-    setBusy(true);
+    // No setBusy here: the upstream check is a millisecond local rev-parse.
+    // pushPlain/pushWithUpstream own the busy state; claiming it here too
+    // leaked +1 on every push and wedged the header spinner forever.
     // Check for an upstream first: prompting on the programmatic state is
     // locale-proof, unlike matching git's (translated) error text.
     runBackground<bool>(
         this, [this] { return m_git->currentBranchHasUpstream(); },
         [this](bool hasUpstream) {
             if (!hasUpstream) {
-                setBusy(false);
                 if (QMessageBox::question(this, "Set Upstream?",
                                           "This branch has no upstream. "
                                           "Create a new remote branch?")
@@ -540,10 +540,7 @@ void MainWindow::doPush() {
             }
             pushPlain();
         },
-        [this](const QString &e) {
-            setBusy(false);
-            showStatus(e, true);
-        });
+        [this](const QString &e) { showStatus(e, true); });
 }
 
 void MainWindow::pushPlain() {
@@ -767,6 +764,7 @@ void MainWindow::setBusy(bool busy) {
         m_busyCount = 0;
     if (m_busyCount == 0) {
         m_headerAction.clear();
+        m_busySince = 0;
     } else if (m_busySince == 0) {
         m_busySince = QDateTime::currentMSecsSinceEpoch();
     }
