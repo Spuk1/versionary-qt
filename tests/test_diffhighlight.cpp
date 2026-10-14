@@ -1,6 +1,7 @@
 #include "ui/DiffViewer.h"
 
 #include <QApplication>
+#include <QElapsedTimer>
 #include <QTextDocument>
 #include <QtTest/QtTest>
 
@@ -39,8 +40,7 @@ private slots:
         QVERIFY(v.document()->blockCount() >= 4);
     }
 
-    void changedMiddleCases() {
-        WordRange r = changedMiddle("int foo = 1;", "int foo = 2;");
+    void changedMiddleCases() {        WordRange r = changedMiddle("int foo = 1;", "int foo = 2;");
         QVERIFY(r.found);
         QCOMPARE(r.aStart, 10);
         QCOMPARE(r.aEnd, 11);
@@ -57,6 +57,29 @@ private slots:
         QCOMPARE(empty.aStart, 0);
         QCOMPARE(empty.aEnd, 0);
         QCOMPARE(empty.bEnd, 1);
+    }
+
+    void largeDiffRendersInTime() {
+        // 20k changed lines: unbounded +/- run pairing used to hang the UI
+        // (>100s). Bounds are generous on purpose; this guards the
+        // complexity class, not a millisecond budget.
+        QString patch = "diff --git a/big.txt b/big.txt\n--- a/big.txt\n+++ b/big.txt\n";
+        for (int i = 0; i < 20000; ++i)
+            patch += QString("-old line %1\n").arg(i);
+        for (int i = 0; i < 20000; ++i)
+            patch += QString("+new line %1\n").arg(i);
+        DiffViewer v;
+        v.resize(800, 600);
+        v.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&v, 15000));
+        QElapsedTimer t;
+        t.start();
+        v.setDiff(patch);
+        v.setLanguageFromFile("big.txt");
+        QTest::qWait(0); // let the rehighlight run
+        const qint64 ms = t.elapsed();
+        qDebug() << "40k-line diff rendered in" << ms << "ms";
+        QVERIFY2(ms < 30000, qPrintable(QString("large diff took %1 ms").arg(ms)));
     }
 };
 

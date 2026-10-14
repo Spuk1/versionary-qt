@@ -5,6 +5,7 @@
 #include <QAction>
 #include <QClipboard>
 #include <QKeyEvent>
+#include <QMap>
 #include <QMenu>
 #include <QMouseEvent>
 #include <QPainter>
@@ -125,6 +126,19 @@ QList<CodeRule> rulesFor(const QString &ext, const QPalette &pal) {
     return rules;
 }
 
+// Compiled token rules, cached per (extension, dark-mode): rebuilding +
+// recompiling a dozen regexes for every diff line dominated large-diff
+// rendering. Keyed by theme brightness so toggles stay correct.
+const QList<CodeRule> &cachedRules(const QString &ext, const QPalette &pal) {
+    const bool dark = pal.color(QPalette::Window).lightness() < 128;
+    static QMap<QPair<QString, bool>, QList<CodeRule>> cache;
+    const auto key = qMakePair(ext, dark);
+    auto it = cache.find(key);
+    if (it == cache.end())
+        it = cache.insert(key, rulesFor(ext, pal));
+    return it.value();
+}
+
 // CodeRule and friends above stay in the anonymous namespace; the
 // highlighter itself is declared in the header (DiffViewer owns one).
 } // namespace
@@ -139,59 +153,72 @@ void DiffHighlighter::setExtension(const QString &ext) {
     }
 }
 
-void DiffHighlighter::paintWordDiff(const QString &content, int offset) {
-    const int me = currentBlock().blockNumber();
-    auto lineAt = [&](int n) {
-        const QTextBlock b = document()->findBlockByNumber(n);
-        return b.isValid() ? b.text() : QString();
-    };
-    auto isMinus = [&](int n) {
-        const QString t = lineAt(n);
-        return !t.isEmpty() && t.startsWith('-') && !t.startsWith("---");
-    };
-    auto isPlus = [&](int n) {
-        const QString t = lineAt(n);
-        return !t.isEmpty() && t.startsWith('+') && !t.startsWith("+++");
-    };
-    const bool mineIsMinus = isMinus(me);
-    if (!mineIsMinus && !isPlus(me))
-        return;
-    QString other;
-    bool otherIsMinus = false;
-    if (mineIsMinus) {
-        int runStart = me;
-        while (runStart - 1 >= 0 && isMinus(runStart - 1))
-            --runStart;
-        int runEnd = me;
-        while (isMinus(runEnd + 1))
-            ++runEnd;
-        int plusCount = 0;
-        for (int k = runEnd + 1; isPlus(k); ++k)
-            ++plusCount;
-        const int idx = me - runStart;
-        if (idx >= plusCount)
-            return;
-        other = lineAt(runEnd + 1 + idx).mid(1);
-    } else {
-        int runEnd = me;
-        while (isPlus(runEnd + 1))
-            ++runEnd;
-        int runStart = me;
-        while (runStart - 1 >= 0 && isPlus(runStart - 1))
-            --runStart;
-        int minusEnd = runStart - 1;
-        int minusStart = minusEnd;
-        while (minusStart - 1 >= 0 && isMinus(minusStart - 1))
-            --minusStart;
-        const int minusCount = minusEnd >= minusStart ? minusEnd - minusStart + 1 : 0;
-        const int idx = me - runStart;
-        if (idx >= minusCount)
-            return;
-        other = lineAt(minusStart + idx).mid(1);
-        otherIsMinus = true;
+namespace {
+// Cap for +/- runs eligible for word-level pairing, and for content
+// length eligible for token colors. Beyond either, lines keep their
+// diff bands only: pairing across huge runs is unreadable, giant lines
+// stall the token regexes, and unbounded walks go quadratic on big
+// diffs (full UI freeze on ~40k-line patches).
+constexpr int kMaxWordRun = 128;
+constexpr int kLongLine = 2000;
+
+bool isMinusText(const QString &t) {
+    return !t.isEmpty() && t.startsWith('-') && !t.startsWith("---");
+}
+
+bool isPlusText(const QString &t) {
+    return !t.isEmpty() && t.startsWith('+') && !t.startsWith("+++");
+}
+
+// Advances edge to the end of its +/- run, returning the distance, or -1
+// when the run exceeds kMaxWordRun. All steps are O(1) block moves.
+int runDistance(QTextBlock &edge, bool backward, bool wantMinus) {
+    int dist = 0;
+    for (;;) {
+        const QTextBlock n = backward ? edge.previous() : edge.next();
+        if (!n.isValid())
+            return dist;
+        const QString t = n.text();
+        if (wantMinus ? !isMinusText(t) : !isPlusText(t))
+            return dist;
+        edge = n;
+        if (++dist > kMaxWordRun)
+            return -1;
     }
+}
+} // namespace
+
+void DiffHighlighter::paintWordDiff(const QString &content, int offset) {
+    const QTextBlock meBlock = currentBlock();
+    const QString meText = meBlock.text();
+    const bool mineIsMinus = isMinusText(meText);
+    if (!mineIsMinus && !isPlusText(meText))
+        return;
+    // Index of this line within its own run, then the same-index line of
+    // the opposite run next door. All walks are capped O(1)-step block
+    // moves: pairing across longer runs is unreadable, and unbounded
+    // walks go quadratic on large diffs (full UI freeze).
+    QTextBlock back = meBlock;
+    const int idx = runDistance(back, true, mineIsMinus);
+    if (idx < 0)
+        return;
+    QTextBlock edge = meBlock;
+    if (runDistance(edge, false, mineIsMinus) < 0)
+        return;
+    QTextBlock other = edge;
+    for (int i = 0; i <= idx; ++i) {
+        other = mineIsMinus ? other.next() : other.previous();
+        if (!other.isValid())
+            return;
+        const QString t = other.text();
+        if (mineIsMinus ? !isPlusText(t) : !isMinusText(t))
+            return;
+    }
+    const QString otherText = other.text().mid(1);
+    const bool otherIsMinus = !mineIsMinus;
     const QString mine = content;
-    const WordRange wr = otherIsMinus ? changedMiddle(other, mine) : changedMiddle(mine, other);
+    const WordRange wr = otherIsMinus ? changedMiddle(otherText, mine)
+                                      : changedMiddle(mine, otherText);
     const int start = otherIsMinus ? wr.bStart : wr.aStart;
     const int end = otherIsMinus ? wr.bEnd : wr.aEnd;
     if (!wr.found || end <= start)
@@ -242,7 +269,12 @@ void DiffHighlighter::highlightBlock(const QString &text) {
         // …then language tokens over the content (marker column skipped).
         const int offset = 1;
         const QString content = text.mid(offset);
-        for (const CodeRule &rule : rulesFor(m_ext, pal)) {
+        if (content.size() > kLongLine) {
+            // Minified blob line: diff bands only, no token/word passes.
+            setCurrentBlockState(0);
+            return;
+        }
+        for (const CodeRule &rule : cachedRules(m_ext, pal)) {
             auto it = rule.pattern.globalMatch(content);
             while (it.hasNext()) {
                 const auto m = it.next();
