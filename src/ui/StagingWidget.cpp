@@ -339,6 +339,17 @@ void StagingWidget::fillList(QListWidget *list, const QStringList &files) {
     sorted.sort(Qt::CaseInsensitive);
     QString lastDir;
     for (const QString &f : sorted) {
+        if (f.endsWith('/')) {
+            // Untracked directory collapsed by `git status` to "dir/": a
+            // single checkable folder row (staging it adds the whole
+            // directory), not a header plus an empty file row.
+            auto *item = new QListWidgetItem(f, list);
+            item->setData(Qt::UserRole, f);
+            item->setToolTip(f);
+            item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
+            item->setCheckState(Qt::Unchecked);
+            continue;
+        }
         const int slash = f.lastIndexOf('/');
         const QString dir = slash >= 0 ? f.left(slash) : QString();
         if (dir != lastDir && !dir.isEmpty()) {
@@ -502,7 +513,10 @@ void StagingWidget::onFileSelected() {
     const QListWidgetItem *item = list->currentItem();
     if (!item || item->data(Qt::UserRole).toString() == "dir-header")
         return;
-    m_currentFile = item->data(Qt::UserRole).toString();
+    const QString path = item->data(Qt::UserRole).toString();
+    if (path.endsWith('/'))
+        return; // directory entry: no file diff to show
+    m_currentFile = path;
     m_currentBucket = list == m_staged ? "staged" : "unstaged";
     loadDiffFor(m_currentFile, m_currentBucket);
 }
@@ -551,6 +565,7 @@ void StagingWidget::showFileMenu(QListWidget *list, const QPoint &pos, bool stag
     list->setCurrentItem(item);
     onFileSelected();
     const QString file = item->data(Qt::UserRole).toString();
+    const bool isDir = file.endsWith('/');
     QMenu menu(this);
     if (staged) {
         menu.addAction("Unstage", [this, file] { unstageSingleFile(file); });
@@ -562,6 +577,12 @@ void StagingWidget::showFileMenu(QListWidget *list, const QPoint &pos, bool stag
     menu.addAction("Copy relative path", [file] {
         QApplication::clipboard()->setText(file);
     });
+    if (isDir) {
+        // Directories support staging/discarding/copying only: blame,
+        // history and external editors are per-file.
+        menu.exec(list->viewport()->mapToGlobal(pos));
+        return;
+    }
     menu.addAction("Open in external editor", [this, file] {
         const QString abs = QDir(m_repos->selectedPath()).absoluteFilePath(file);
         if (!QDesktopServices::openUrl(QUrl::fromLocalFile(abs)))
