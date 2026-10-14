@@ -182,8 +182,8 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
     updateEmptyState();
     restoreLayout();
 
-    // Deferred startup fetch, mirroring GitContext's 30s timer (shortened).
-    QTimer::singleShot(30000, this, &MainWindow::doFetch);
+    // No interval fetching: fetches happen on window focus (throttled in
+    // checkFocusFetch) or when explicitly triggered by the user.
     auto *busyWatchdog = new QTimer(this);
     busyWatchdog->setInterval(60000);
     connect(busyWatchdog, &QTimer::timeout, this, &MainWindow::watchBusyTimeout);
