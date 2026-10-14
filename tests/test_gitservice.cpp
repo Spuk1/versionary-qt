@@ -244,6 +244,34 @@ private slots:
         QVERIFY(git.run({"checkout", "--", ".gitignore"}, m_work).ok());
     }
 
+    void untrackedDirsExpandToFiles() {
+        GitRunner git;
+        auto run = [&](const QStringList &args) {
+            const GitResult r = git.run(args, m_work);
+            QVERIFY2(r.ok(), qPrintable(r.stderrText));
+        };
+        QDir().mkpath(m_work + "/newdir/sub");
+        QFile f(m_work + "/newdir/n1.txt");
+        QVERIFY(f.open(QIODevice::WriteOnly | QIODevice::Text));
+        f.write("one\n");
+        f.close();
+        QFile g(m_work + "/newdir/sub/n2.txt");
+        QVERIFY(g.open(QIODevice::WriteOnly | QIODevice::Text));
+        g.write("two\n");
+        g.close();
+        // Collapsed "newdir/" must expand to individual files (hidden or
+        // not) so each new file can be diffed on its own.
+        const QStringList changes = m_git->listChanges();
+        QVERIFY(!changes.contains("newdir/"));
+        QVERIFY(changes.contains("newdir/n1.txt"));
+        QVERIFY(changes.contains("newdir/sub/n2.txt"));
+        const FileDiff d = m_git->fileDiff("newdir/n1.txt", "HEAD", "WORKDIR");
+        QVERIFY2(d.ok, qPrintable(d.error));
+        QVERIFY(d.patch.contains("+one"));
+        QVERIFY(QDir(m_work + "/newdir").removeRecursively());
+        QVERIFY(!QDir(m_work + "/newdir").exists());
+    }
+
     void stashDiffFileLogAndBlame() {
         QFile f(m_work + "/a.txt");
         QVERIFY(f.open(QIODevice::Append | QIODevice::Text));

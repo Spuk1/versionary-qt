@@ -62,9 +62,12 @@ private slots:
         ApiClient api;
         GitService git(&auth, &ssh, &api);
         git.setRepoPath(m_work);
-        // Sanity: porcelain really collapses both dirs (hidden or not).
-        QVERIFY(git.listChanges().contains(".config/"));
-        QVERIFY(git.listChanges().contains("plain/"));
+        // Sanity: collapsed entries expand to individual files.
+        const QStringList changes = git.listChanges();
+        QVERIFY(!changes.contains(".config/"));
+        QVERIFY(!changes.contains("plain/"));
+        QVERIFY(changes.contains(".config/s1.txt"));
+        QVERIFY(changes.contains("plain/f1.txt"));
 
         RepoManager repos;
         repos.addRepository(m_work);
@@ -74,20 +77,22 @@ private slots:
         QList<QListWidget *> lists = widget.findChildren<QListWidget *>();
         QVERIFY(lists.size() >= 2);
         QListWidget *unstaged = lists.first();
-        QTRY_VERIFY_WITH_TIMEOUT(unstaged->count() == 3, 15000);
+        QTRY_VERIFY_WITH_TIMEOUT(unstaged->count() == 5, 15000);
 
+        // New folders expand like any other folder structure: header plus
+        // one checkable row per file, so each new file can be diffed and
+        // staged individually.
         QStringList texts;
-        QStringList dirRows;
         for (int i = 0; i < unstaged->count(); ++i) {
             QListWidgetItem *item = unstaged->item(i);
-            QVERIFY(!item->text().isEmpty()); // no empty file row
-            QVERIFY(item->data(Qt::UserRole).toString() != "dir-header");
+            QVERIFY(!item->text().isEmpty());
+            QVERIFY(!item->data(Qt::UserRole).toString().endsWith('/'));
             texts << item->text();
-            if (item->data(Qt::UserRole).toString().endsWith('/'))
-                dirRows << item->text();
         }
-        QCOMPARE(texts, QStringList({".config/", "a.txt", "plain/"}));
-        QCOMPARE(dirRows, QStringList({".config/", "plain/"}));
+        QCOMPARE(texts, QStringList({".config", "s1.txt", "a.txt", "plain", "f1.txt"}));
+        QCOMPARE(unstaged->item(0)->data(Qt::UserRole).toString(), QString("dir-header"));
+        QVERIFY((unstaged->item(0)->flags() & Qt::ItemIsUserCheckable) == 0);
+        QVERIFY((unstaged->item(1)->flags() & Qt::ItemIsUserCheckable) != 0);
         // Loading the list must not raise any error.
         for (const QList<QVariant> &args : errors) {
             QVERIFY2(!args.at(1).toBool(), qPrintable(args.at(0).toString()));

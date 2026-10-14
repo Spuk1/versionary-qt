@@ -340,7 +340,25 @@ QStringList GitService::listChanges() {
     for (const QString &line : r.stdoutText.split('\n')) {
         if (line.isEmpty() || line.size() < 2 || line.at(1) == ' ')
             continue;
-        out << line.mid(3).trimmed();
+        const QString entry = line.mid(3).trimmed();
+        // Fully-untracked directories collapse to "dir/": expand them so
+        // every new file lists (and diffs) like any other file instead of
+        // forcing a whole-folder stage to inspect anything.
+        if (entry.endsWith('/')) {
+            const GitResult u = m_git.run(
+                {"ls-files", "--others", "--exclude-standard", "--", entry}, m_repo);
+            if (u.ok()) {
+                for (const QString &f : u.stdoutText.split('\n', Qt::SkipEmptyParts)) {
+                    const QString t = f.trimmed();
+                    if (!t.isEmpty())
+                        out << t;
+                }
+                continue;
+            }
+            // Expansion failed: keep the collapsed entry so the directory
+            // stays visible (rendered as a folder row) instead of vanishing.
+        }
+        out << entry;
     }
     return out;
 }
