@@ -49,16 +49,3 @@ jobs:
         with:
           name: test-logs-${{ matrix.os }}
           path: build/Testing/Temporary/LastTest.log
-
-      # Runs each test_layout slot in its own process to identify a crasher.
-      - name: Isolate failing test_layout slot
-        if: failure() && matrix.os == 'windows-2022'
-        shell: pwsh
-        run: |
-          $exe = Get-ChildItem -Path build -Recurse -Filter test_layout.exe |
-            Select-Object -First 1 -ExpandProperty FullName
-          foreach ($slot in @('settingKeys','splitterStateRoundTrips','panelSplittersHaveObjectNames','fetchAllSummarySuccess','fetchAllSummaryErrors','historyDiffHasSameOptionsAsStaging')) {
-            Write-Output "=== SLOT $slot ==="
-            & $exe $slot
-            Write-Output "exit code: $LASTEXITCODE"
-          }

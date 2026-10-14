@@ -1,37 +1,47 @@
-# Versionary-Qt
+# Versionary
 
-Native C++ / Qt6 port of [Versionary](https://github.com/spuk1/versionary),
-a free open-source Git GUI client. Same features as the Electron/React
-client, without the Chromium runtime: faster startup, lower memory use,
-and native look and feel.
+[![CI](https://github.com/Spuk1/versionary-qt/actions/workflows/ci.yml/badge.svg)](https://github.com/Spuk1/versionary-qt/actions/workflows/ci.yml)
+[![Latest release](https://img.shields.io/github/v/release/Spuk1/versionary-qt)](https://github.com/Spuk1/versionary-qt/releases)
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
+[![Support on Ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/L3L71NX36P)
+
+A fast, native Git GUI client built with C++ and Qt 6. Free and
+open-source (GPL-3.0-or-later), with no Chromium runtime: fast startup,
+low memory use, and a native look and feel on Linux, Windows, and macOS.
 
 ## Download
 
-Grab the latest installer for Linux (AppImage), Windows (zip), or macOS
-(DMG) from the
-[Releases page](https://github.com/Spuk1/versionary-qt/releases).
-Maintainers: see [docs/RELEASING.md](docs/RELEASING.md) for how releases
-are built and versioned.
+Get the latest build for your platform from the
+[Releases page](https://github.com/Spuk1/versionary-qt/releases):
 
-## Features (parity with the Electron client)
+| Platform | File | How to run |
+|----------|------|------------|
+| Linux | `Versionary-<ver>-Linux-x86_64.AppImage` | `chmod +x *.AppImage && ./Versionary-*.AppImage` (Qt bundled, no install needed) |
+| Windows | `Versionary-<ver>-Windows-x86_64.zip` | Unzip and run `bin/Versionary.exe` (Qt DLLs included) |
+| macOS (Apple Silicon) | `Versionary-<ver>-macOS-arm64.dmg` | Open the DMG, drag to Applications. First launch: right-click → Open (unsigned build) |
 
-- Multi-repository tabs with drag-reorder, rename, close
-- Workspaces grouping repositories
-- Fetch / pull / push (with set-upstream prompt), clone with account +
-  protocol selection and repository search
+Requires `git` on PATH.
+
+## Features
+
+- Multi-repository tabs with drag-reorder, rename, close, and workspaces
+- Fetch / pull / push (with set-upstream prompt), clone with account,
+  protocol selection, and repository search
 - Branches: create, checkout, rename (local + remote), delete, merge,
   fast-forward, ahead/behind, pull-request links (GitHub/Bitbucket)
 - Staging: stage/unstage/discard per file or all, partial line-level
-  stage/discard/unstage via clickable diff margin, commit
+  stage/discard/unstage via clickable diff margin, commit, delete
+  untracked files from disk (to the system trash)
 - History: paginated searchable log, commit details, per-file diffs,
-  create tag, checkout commit (detached HEAD)
-- Stash: push with file checklist, apply/pop/drop/rename
+  tags, detached-HEAD checkout, blame, file history
+- Stash: push with file checklist, apply/pop/drop/rename, stash viewer
 - Submodules: list, reset to recorded commit, auto sync on fetch/pull/clone
-- OAuth for GitHub, Bitbucket, GitLab (PKCE loopback, token refresh)
-- Global + per-repo SSH keys, ssh-agent detection
-- Git identity management, system/light/dark themes, onboarding wizard
+- OAuth login for GitHub, Bitbucket, and GitLab (works out of the box in
+  official builds), global + per-repo SSH keys, ssh-agent detection
+- Git identity management, system/light/dark themes, onboarding wizard,
+  quick-open (`Ctrl+P`), layout persistence
 
-## Build
+## Build from source
 
 Prerequisites: CMake 3.21+, Qt 6.4+ (Widgets, Network, Concurrent, Test),
 a C++17 compiler, and `git` on PATH.
@@ -43,13 +53,19 @@ ctest --test-dir build --output-on-failure
 ./build/Versionary
 ```
 
-Copy `.env` next to the binary (or export the variables) to enable OAuth:
+### API keys for local builds
+
+Official builds ship with OAuth API keys baked in. For self-compiled
+builds, logins stay disabled until you provide your own — either via
+environment variables, a `.env` file next to the binary (or at
+`~/.Versionary/.env`), or build-time defines:
 
 ```bash
-cp .env build/.env
+cmake -S . -B build -DVERSIONARY_GITHUB_CLIENT_ID=… \
+  -DVERSIONARY_GITHUB_CLIENT_SECRET=… […]
 ```
 
-## Install (Linux)
+### Install on Linux
 
 ```bash
 sudo scripts/install.sh          # installs to /usr/local
@@ -57,52 +73,35 @@ sudo scripts/install.sh /usr     # installs to /usr
 ```
 
 This installs the binary, desktop entry, icons, and AppStream metadata.
-OAuth keys are read from `~/.Versionary/.env` (same names as `.env`).
+A `PKGBUILD` (`packaging/`) and Flatpak manifest
+(`packaging/io.github.spuk1.Versionary.yml`) are included for distro
+packaging.
 
-### OAuth credentials: env, baked, or file
+## Project layout
 
-Resolution order (first hit wins):
-
-1. Process environment (`VERSIONARY_GITHUB_CLIENT_ID`, …) — highest priority.
-   Legacy pre-1.0 names (`GITHUB_CLIENT_ID`, `CLIENT_GITHUB_SECRET`, …)
-   still work as a fallback.
-2. Build-time baked values for packaged builds:
-   `cmake -DVERSIONARY_GITHUB_CLIENT_ID=… […]`. The AUR `PKGBUILD`
-   reads them from the environment or a dotenv-style `.env` placed next
-   to it (never packaged). Never commit real secrets.
-3. `.env` lookup: next to the binary, current directory, then
-   `~/.Versionary/.env` — this is how dev builds and the Flatpak find
-   keys (`install.sh` seeds `~/.Versionary/.env` from `./.env` once).
-
-### Arch Linux (AUR)
-
-```bash
-git clone https://aur.archlinux.org/versionary-qt-git.git
-cd versionary-qt-git
-makepkg -si
-```
-
-The `PKGBUILD` lives in `packaging/` (bump `pkgver` via the `pkgver()`
-function automatically on build). See [docs/PACKAGING.md](docs/PACKAGING.md)
-for publishing to AUR and Flathub.
-
-### Flatpak
-
-```bash
-flatpak-builder --install build-dir packaging/io.github.spuk1.Versionary.yml
-```
-
-Requires the `org.kde.Platform//6.8` runtime. The manifest is validated
-for structure locally; a full `flatpak-builder` run was not possible in
-this environment (no builder installed).
-
-## Layout
-
-- `src/core` — process runner, JSON stores, identity
+- `src/core` — process runner, JSON stores, identity, app config
 - `src/git` — git operations, auth planning, diff/patch helpers
 - `src/net` — OAuth + REST API clients
 - `src/models` — commit data types and paginated log model
 - `src/ui` — main window, panels, dialogs, theme
 - `tests` — QtTest unit tests
+- `packaging` — desktop entry, icons, AppStream metadata, PKGBUILD,
+  Flatpak manifest
+- `scripts` — build and install helpers
 
-See `Agents.md` for contributor rules.
+## Contributing
+
+Bug reports and pull requests are welcome — please open an issue first to
+discuss substantial changes. By contributing you agree your work is
+released under the same license (GPL-3.0-or-later).
+
+## Support
+
+Versionary is free software maintained in spare time. If it saves you
+time, consider supporting development:
+
+[![Support on Ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/L3L71NX36P)
+
+## License
+
+[GPL-3.0-or-later](LICENSE).

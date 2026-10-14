@@ -1,6 +1,6 @@
 name: Release
 
-# How a release happens (see docs/RELEASING.md):
+# How a release happens:
 #   Option A (recommended): Actions tab -> Release -> Run workflow -> pick
 #             bump=patch|minor|major. The workflow computes the next version
 #             from the highest vX.Y.Z tag, pushes that tag, builds all
@@ -120,19 +120,6 @@ jobs:
         with:
           name: test-logs-${{ matrix.os }}
           path: build/Testing/Temporary/LastTest.log
-
-      # Runs each test_layout slot in its own process to identify a crasher.
-      - name: Isolate failing test_layout slot
-        if: failure() && matrix.os == 'windows'
-        shell: pwsh
-        run: |
-          $exe = Get-ChildItem -Path build -Recurse -Filter test_layout.exe |
-            Select-Object -First 1 -ExpandProperty FullName
-          foreach ($slot in @('settingKeys','splitterStateRoundTrips','panelSplittersHaveObjectNames','fetchAllSummarySuccess','fetchAllSummaryErrors','historyDiffHasSameOptionsAsStaging')) {
-            Write-Output "=== SLOT $slot ==="
-            & $exe $slot
-            Write-Output "exit code: $LASTEXITCODE"
-          }
 
       # ---- Linux: AppImage (portable) ------------------------------------
       - name: Package (Linux AppImage)
