@@ -42,6 +42,9 @@ public:
 
     bool isBusy() const { return m_busyCount > 0; }
 
+    // Ko-fi support link, mirroring the badge in the old client.
+    static QString supportUrl();
+
     // Pure helpers (unit-tested): "behind\tahead" → "↑n ↓m" / "✓ in sync".
     static QString formatAheadBehind(int ahead, int behind);
     static QString parseAheadBehindResult(const QString &result);
@@ -69,6 +72,7 @@ private slots:
     void openBranchDialog();
     void openCloneDialog();
     void openSettings();
+    void openSupportLink();
     void showStatus(const QString &message, bool error);
     void showOpError(const QString &e);
     void setBusy(bool busy);

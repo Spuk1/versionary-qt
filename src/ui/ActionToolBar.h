@@ -6,7 +6,8 @@ class RepoHeaderWidget;
 class RepoManager;
 
 // Top action bar: Clone / Open / Fetch / Pull / Push / Stash / Add Branch /
-// Settings with the repository header in the middle. Mirrors Utils.tsx.
+// Settings / Buy-me-a-coffee with the repository header in the middle.
+// Mirrors Utils.tsx.
 class ActionToolBar : public QToolBar {
     Q_OBJECT
 public:
@@ -21,4 +22,5 @@ signals:
     void stashRequested();
     void addBranchRequested();
     void settingsRequested();
+    void coffeeRequested();
 };

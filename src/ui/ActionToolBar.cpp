@@ -26,4 +26,6 @@ ActionToolBar::ActionToolBar(RepoManager *repos, RepoHeaderWidget *header, QWidg
     add("Add Branch", "⑂+", &ActionToolBar::addBranchRequested);
     addSeparator();
     add("Settings", "⚙", &ActionToolBar::settingsRequested);
+    addSeparator();
+    add("Buy me a coffee", "☕", &ActionToolBar::coffeeRequested);
 }

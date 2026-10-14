@@ -3,8 +3,10 @@
 #include "ui/OperationProgressDialog.h"
 
 #include <QFile>
+#include <QMenuBar>
 #include <QTemporaryDir>
 #include <QTimer>
+#include <QToolBar>
 #include <QtTest/QtTest>
 
 // Regression test for stuck header actions: doPush used to claim the busy
@@ -91,6 +93,35 @@ private slots:
         }
         QVERIFY2(sawFetch, "fetch never started");
         QTRY_VERIFY_WITH_TIMEOUT(!progressWithTitle("Fetching") && !w.isBusy(), 15000);
+    }
+
+    void supportLinkIsWired() {
+        // Same Ko-fi page as the badge in the old client. Actions are only
+        // checked for existence: triggering them would open a browser.
+        QCOMPARE(MainWindow::supportUrl(), QString("https://ko-fi.com/L3L71NX36P"));
+        MainWindow w;
+        w.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&w, 15000));
+        QAction *menuCoffee = nullptr;
+        if (QMenuBar *bar = w.findChild<QMenuBar *>()) {
+            for (QAction *top : bar->actions()) {
+                if (!top->menu())
+                    continue;
+                for (QAction *sub : top->menu()->actions()) {
+                    if (sub->text().contains("Coffee"))
+                        menuCoffee = sub;
+                }
+            }
+        }
+        QVERIFY2(menuCoffee != nullptr, "General menu coffee entry missing");
+        QAction *barCoffee = nullptr;
+        for (QToolBar *tb : w.findChildren<QToolBar *>()) {
+            for (QAction *a : tb->actions()) {
+                if (a->toolTip().contains("coffee", Qt::CaseInsensitive))
+                    barCoffee = a;
+            }
+        }
+        QVERIFY2(barCoffee != nullptr, "toolbar coffee button missing");
     }
 
     void cleanupTestCase() { delete m_tmp; }

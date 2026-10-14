@@ -26,6 +26,7 @@
 #include <QCloseEvent>
 #include <QCoreApplication>
 #include <QDateTime>
+#include <QDesktopServices>
 #include <QFileDialog>
 #include <QMenuBar>
 #include <QMessageBox>
@@ -40,6 +41,7 @@
 #include <QStatusBar>
 #include <QTabWidget>
 #include <QTimer>
+#include <QUrl>
 #include <QVBoxLayout>
 
 MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
@@ -130,6 +132,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
     connect(toolbar, &ActionToolBar::stashRequested, this, &MainWindow::openStashDialog);
     connect(toolbar, &ActionToolBar::addBranchRequested, this, &MainWindow::openBranchDialog);
     connect(toolbar, &ActionToolBar::settingsRequested, this, &MainWindow::openSettings);
+    connect(toolbar, &ActionToolBar::coffeeRequested, this, &MainWindow::openSupportLink);
 
     connect(m_repos, &RepoManager::selectionChanged, this, &MainWindow::onRepoSelected);
     connect(m_repos, &RepoManager::repositoriesChanged, this, &MainWindow::updateEmptyState);
@@ -693,6 +696,12 @@ void MainWindow::openSettings() {
     dlg.exec();
 }
 
+QString MainWindow::supportUrl() { return QString("https://ko-fi.com/L3L71NX36P"); }
+
+void MainWindow::openSupportLink() {
+    QDesktopServices::openUrl(QUrl(supportUrl()));
+}
+
 void MainWindow::setupMenuBar() {
     auto *general = menuBar()->addMenu("&General");
     QAction *cloneAct = general->addAction("&Clone…");
@@ -707,6 +716,9 @@ void MainWindow::setupMenuBar() {
     QAction *quickAct = general->addAction("&Quick Open…");
     quickAct->setShortcut(QKeySequence("Ctrl+P"));
     connect(quickAct, &QAction::triggered, this, &MainWindow::openQuickOpen);
+    QAction *coffeeAct = general->addAction("Buy Me a Coffee…");
+    coffeeAct->setToolTip("Support Versionary on Ko-fi (opens in browser)");
+    connect(coffeeAct, &QAction::triggered, this, &MainWindow::openSupportLink);
     QAction *closeAct = general->addAction("&Close Repository");
     closeAct->setShortcut(QKeySequence("Ctrl+W"));
     connect(closeAct, &QAction::triggered, this, [&] {
