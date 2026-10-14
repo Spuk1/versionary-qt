@@ -28,6 +28,12 @@ class ThemeManager;
 // Main window: toolbar, repo tabs, source tree + changes/history splitter.
 // Wires every panel to GitService through background tasks and owns the
 // application services (auth, ssh, api, theme, repos).
+struct FetchAllResult {
+    QStringList errors;
+    bool cancelled = false;
+    int done = 0;
+};
+
 class MainWindow : public QMainWindow {
     Q_OBJECT
 public:
@@ -39,6 +45,7 @@ public:
     static QString parseAheadBehindResult(const QString &result);
     static QString formatFetchTime(const QDateTime &time);
     static bool shouldShowEmptyState(int repoCount);
+    static QString formatFetchAllSummary(const QStringList &errors, int total);
     static QStringList layoutSettingKeys();
     static void saveSplitterState(QSettings &settings, const QString &key, QSplitter *splitter);
     static void restoreSplitterState(QSettings &settings, const QString &key,
@@ -49,6 +56,7 @@ private slots:
     void openRepository();
     void openQuickOpen();
     void doFetch();
+    void doFetchAll();
     void setupMenuBar();
     void showAbout();
     void doPull();

@@ -53,6 +53,19 @@ private slots:
         QVERIFY(staging.findChild<QSplitter *>("StagingSplitter") != nullptr);
         QVERIFY(history.findChild<QSplitter *>("HistorySplitter") != nullptr);
     }
+
+    void fetchAllSummarySuccess() {
+        QCOMPARE(MainWindow::formatFetchAllSummary({}, 3), QString("Fetched 3 repositories"));
+        QCOMPARE(MainWindow::formatFetchAllSummary({}, 1), QString("Fetched 1 repository"));
+    }
+
+    void fetchAllSummaryErrors() {
+        const QString s =
+            MainWindow::formatFetchAllSummary({"b: boom", "c: bang"}, 3);
+        QVERIFY(s.startsWith("Fetched 1 of 3 repositories, 2 failed:"));
+        QVERIFY(s.contains("b: boom"));
+        QVERIFY(s.contains("c: bang"));
+    }
 };
 
 QTEST_MAIN(TestLayout)

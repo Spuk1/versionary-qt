@@ -389,6 +389,103 @@ void MainWindow::doFetch() {
         });
 }
 
+QString MainWindow::formatFetchAllSummary(const QStringList &errors, int total) {
+    if (errors.isEmpty()) {
+        return total == 1 ? "Fetched 1 repository"
+                          : QString("Fetched %1 repositories").arg(total);
+    }
+    const int ok = qMax(0, total - errors.size());
+    QStringList lines = {QString("Fetched %1 of %2 repositories, %3 failed:")
+                             .arg(ok)
+                             .arg(total)
+                             .arg(errors.size())};
+    for (const QString &e : errors)
+        lines << "- " + e;
+    return lines.join('\n');
+}
+
+void MainWindow::doFetchAll() {
+    const QVector<RepositoryEntry> repos = m_repos->repositories();
+    if (repos.isEmpty()) {
+        showStatus("Open or clone a repository first", true);
+        return;
+    }
+    if (m_header->isBusy())
+        return;
+    m_headerAction = "fetching";
+    setBusy(true);
+    QPointer<OperationProgressDialog> progress =
+        new OperationProgressDialog("Fetching all repositories", this);
+    auto cancel = progress->cancelFlag();
+    const int total = repos.size();
+    runBackground<FetchAllResult>(
+        this,
+        [this, repos, progress, cancel] {
+            // Local instance: the shared m_git stays pointed at the selected
+            // repo, so a mid-fetch tab switch cannot redirect this worker.
+            FetchAllResult out;
+            GitService local(m_auth, m_ssh, m_api);
+            int i = 0;
+            for (const RepositoryEntry &r : repos) {
+                if (cancel->load()) {
+                    out.cancelled = true;
+                    break;
+                }
+                ++i;
+                const QString prefix =
+                    QString("Fetching %1 (%2/%3)").arg(r.name).arg(i).arg(repos.size());
+                if (progress)
+                    progress->reportProgress({prefix, -1});
+                try {
+                    local.setRepoPath(r.path);
+                    auto progCb = GitService::ProgressCallback(
+                        [progress, prefix](const GitProgress &p) {
+                            if (progress) {
+                                GitProgress q = p;
+                                q.phase = prefix + (p.phase.isEmpty() ? QString() : " — " + p.phase);
+                                progress->reportProgress(q);
+                            }
+                        });
+                    local.fetch(progCb, cancel);
+                    ++out.done;
+                } catch (const std::exception &e) {
+                    out.errors << r.name + ": " + QString::fromStdString(e.what());
+                }
+            }
+            if (cancel->load())
+                out.cancelled = true;
+            return out;
+        },
+        [this, progress, total](const FetchAllResult &res) {
+            if (progress) {
+                progress->close();
+                progress->deleteLater();
+            }
+            setBusy(false);
+            if (res.cancelled && res.done == 0 && res.errors.isEmpty()) {
+                statusBar()->showMessage("Cancelled", 4000);
+                return;
+            }
+            m_lastFetch = QDateTime::currentDateTime();
+            if (m_fetchLabel)
+                m_fetchLabel->setText(formatFetchTime(m_lastFetch));
+            refreshHead();
+            m_sourceTree->refresh();
+            if (res.errors.isEmpty())
+                showStatus(formatFetchAllSummary(res.errors, total), false);
+            else
+                showStatus(formatFetchAllSummary(res.errors, total), true);
+        },
+        [this, progress](const QString &e) {
+            if (progress) {
+                progress->close();
+                progress->deleteLater();
+            }
+            setBusy(false);
+            showOpError(e);
+        });
+}
+
 void MainWindow::doPull() {
     if (!ensureRepoSelected())
         return;
@@ -594,6 +691,9 @@ void MainWindow::setupMenuBar() {
     QAction *openAct = general->addAction("&Open…");
     openAct->setShortcut(QKeySequence("Ctrl+O"));
     connect(openAct, &QAction::triggered, this, &MainWindow::openRepository);
+    QAction *fetchAllAct = general->addAction("Fetch &All");
+    fetchAllAct->setShortcut(QKeySequence("Ctrl+Shift+F"));
+    connect(fetchAllAct, &QAction::triggered, this, &MainWindow::doFetchAll);
     QAction *quickAct = general->addAction("&Quick Open…");
     quickAct->setShortcut(QKeySequence("Ctrl+P"));
     connect(quickAct, &QAction::triggered, this, &MainWindow::openQuickOpen);
