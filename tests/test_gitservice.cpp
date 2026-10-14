@@ -272,6 +272,38 @@ private slots:
         QVERIFY(!QDir(m_work + "/newdir").exists());
     }
 
+    void compareBranchesDiff() {
+        GitRunner git;
+        auto run = [&](const QStringList &args) {
+            const GitResult r = git.run(args, m_work);
+            QVERIFY2(r.ok(), qPrintable(r.stderrText));
+        };
+        const QString back =
+            git.run({"rev-parse", "--abbrev-ref", "HEAD"}, m_work).stdoutText.trimmed();
+        run({"checkout", "-qb", "cmp-a"});
+        QFile f(m_work + "/cmp.txt");
+        QVERIFY(f.open(QIODevice::WriteOnly | QIODevice::Text));
+        f.write("cmp-data\n");
+        f.close();
+        run({"add", "."});
+        run({"commit", "-m", "cmp commit"});
+        // Triple-dot: cmp-a's changes since forking from main.
+        const QString patch = m_git->compareBranches("main", "cmp-a");
+        QVERIFY(patch.contains("+cmp-data"));
+        // Same ref on both sides: empty (also covers diff's exit code 0).
+        QVERIFY(m_git->compareBranches("cmp-a", "cmp-a").trimmed().isEmpty());
+        bool threw = false;
+        try {
+            m_git->compareBranches("", "cmp-a");
+        } catch (const GitException &) {
+            threw = true;
+        }
+        QVERIFY(threw);
+        run({"checkout", "-q", back});
+        run({"branch", "-D", "cmp-a"});
+        QVERIFY(git.run({"status", "--porcelain"}, m_work).stdoutText.trimmed().isEmpty());
+    }
+
     void stashDiffFileLogAndBlame() {
         QFile f(m_work + "/a.txt");
         QVERIFY(f.open(QIODevice::Append | QIODevice::Text));

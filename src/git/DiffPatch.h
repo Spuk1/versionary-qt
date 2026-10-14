@@ -11,4 +11,7 @@ class DiffPatch {
 public:
     static QString buildSelectedPatch(const QString &diffText,
                                       const QSet<int> &selectedLines);
+    // Lists the files in a unified patch from its "diff --git a/x b/y"
+    // headers (b-side path wins, a/ b/ prefixes stripped).
+    static QStringList filesInPatch(const QString &patch);
 };

@@ -52,6 +52,7 @@ private:
     void createPr(const QString &branch);
     void checkoutCommit(const QString &oid);
     void showStashDiff(const QString &ref, const QString &patch);
+    void showCompareDialog(const QString &ref);
     void popStashRef(const QString &ref);
     void dropStashRef(const QString &ref);
     void applyStashFileRef(const QString &ref, const QString &file);

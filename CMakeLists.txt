@@ -101,6 +101,8 @@ add_library(versionary_core STATIC
     src/ui/ConflictDialog.h
     src/ui/OperationProgressDialog.cpp
     src/ui/OperationProgressDialog.h
+    src/ui/CompareDialog.cpp
+    src/ui/CompareDialog.h
     src/ui/StashViewerDialog.cpp
     src/ui/StashViewerDialog.h
     src/ui/BlameDialog.cpp

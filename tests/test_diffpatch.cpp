@@ -46,6 +46,23 @@ private slots:
         // selecting the context line must not produce output
         QCOMPARE(DiffPatch::buildSelectedPatch(diff, {5}), QString());
     }
+
+    void listsFilesFromHeaders() {
+        const QString patch =
+            "diff --git a/a.txt b/a.txt\nindex 111..222\n--- a/a.txt\n+++ b/a.txt\n"
+            "@@ -1 +1 @@\n-old\n+new\n"
+            "diff --git a/sub/b.txt b/sub/b.txt\nindex 333..444\n"
+            "@@ -1 +1 @@\n-x\n+y\n";
+        QCOMPARE(DiffPatch::filesInPatch(patch), QStringList({"a.txt", "sub/b.txt"}));
+    }
+
+    void renameListsNewPathOnce() {
+        const QString patch =
+            "diff --git a/old.txt b/new.txt\nsimilarity index 90%\n"
+            "rename from old.txt\nrename to new.txt\n";
+        QCOMPARE(DiffPatch::filesInPatch(patch), QStringList({"new.txt"}));
+        QCOMPARE(DiffPatch::filesInPatch({}), QStringList());
+    }
 };
 
 QTEST_MAIN(TestDiffPatch)

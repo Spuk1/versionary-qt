@@ -2,6 +2,28 @@
 
 #include <QRegularExpression>
 
+namespace {
+QString headerPath(const QString &header) {
+    // Header looks like "diff --git a/<path> b/<path>".
+    QStringList paths;
+    for (const QString &p : header.split(' ', Qt::SkipEmptyParts)) {
+        QString t = p;
+        if (t.startsWith("a/") || t.startsWith("b/"))
+            t = t.mid(2);
+        else
+            continue;
+        if (!paths.contains(t))
+            paths << t;
+    }
+    // Prefer the b-side (new) path; fall back to whatever matched.
+    for (int i = paths.size() - 1; i >= 0; --i) {
+        if (!paths.at(i).isEmpty() && paths.at(i) != "/dev/null")
+            return paths.at(i);
+    }
+    return {};
+}
+} // namespace
+
 QString DiffPatch::buildSelectedPatch(const QString &diffText,
                                       const QSet<int> &selectedLines) {
     const QStringList lines = diffText.split('\n');
@@ -88,4 +110,16 @@ QString DiffPatch::buildSelectedPatch(const QString &diffText,
     }
 
     return any ? out.join('\n') + '\n' : QString();
+}
+
+QStringList DiffPatch::filesInPatch(const QString &patch) {
+    QStringList out;
+    for (const QString &line : patch.split('\n')) {
+        if (!line.startsWith("diff --git "))
+            continue;
+        const QString path = headerPath(line);
+        if (!path.isEmpty() && !out.contains(path))
+            out << path;
+    }
+    return out;
 }

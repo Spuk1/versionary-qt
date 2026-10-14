@@ -1,5 +1,6 @@
 #include "SourceTreeWidget.h"
 #include "AsyncHelper.h"
+#include "CompareDialog.h"
 #include "DiffViewer.h"
 #include "RepoManager.h"
 #include "StashViewerDialog.h"
@@ -456,6 +457,13 @@ void SourceTreeWidget::applyStashFileRef(const QString &ref, const QString &file
         [this](const QString &e) { emit statusMessage(e, true); });
 }
 
+void SourceTreeWidget::showCompareDialog(const QString &ref) {
+    auto *dlg = new CompareDialog(m_git, ref, m_localBranches, this);
+    dlg->setAttribute(Qt::WA_DeleteOnClose);
+    dlg->show();
+    dlg->loadComparison();
+}
+
 bool SourceTreeWidget::eventFilter(QObject *watched, QEvent *event) {
     if (watched != m_tree->viewport())
         return QWidget::eventFilter(watched, event);
@@ -536,6 +544,7 @@ void SourceTreeWidget::onContextMenu(const QPoint &pos) {
         menu.addAction("Pull", [&] { emit pullRequested(); });
         menu.addAction("Push", [&] { emit pushRequested(); });
         menu.addAction("Create pull request", [&] { createPr(ref); });
+        menu.addAction("Compare…", [&] { showCompareDialog(ref); });
         menu.addSeparator();
         menu.addAction("New Branch…", [&] { emit addBranchRequested(); });
         if (!current.isEmpty() && current != ref)
@@ -556,6 +565,7 @@ void SourceTreeWidget::onContextMenu(const QPoint &pos) {
         menu.exec(global);
     } else if (kind == "remote-branch") {
         menu.addAction("Checkout", [&] { checkoutBranch(ref); });
+        menu.addAction("Compare…", [&] { showCompareDialog(ref); });
         menu.addAction("Delete remote…", [&] { deleteBranch(ref, true); });
         menu.exec(global);
     } else if (kind == "stash") {

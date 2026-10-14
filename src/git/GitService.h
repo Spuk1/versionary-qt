@@ -77,6 +77,9 @@ public:
     CommitDetails commitDetails(const QString &oid);
     QString commitFileDiff(const QString &oid, const QString &filepath, int context,
                            int perParent = -1, bool ignoreWhitespace = false);
+    // Full unified patch of head's changes since it forked from base
+    // (`git diff base...head`, like a pull-request compare view).
+    QString compareBranches(const QString &base, const QString &head);
     FileDiff fileDiff(const QString &filepath, const QString &base = "HEAD",
                       const QString &target = "WORKDIR", int context = 3,
                       bool ignoreWhitespace = false);

@@ -123,6 +123,19 @@ QString GitService::commitFileDiff(const QString &oid, const QString &filepath, 
     return r.stdoutText;
 }
 
+QString GitService::compareBranches(const QString &base, const QString &head) {
+    requireRepo();
+    const QString b = base.trimmed();
+    const QString h = head.trimmed();
+    if (b.isEmpty() || h.isEmpty())
+        throw GitException("Invalid branches");
+    // `git diff` exits 1 when differences exist: only real failures throw.
+    const GitResult r = m_git.run({"diff", "--no-color", "-U3", b + "..." + h, "--"}, m_repo);
+    if (r.exitCode != 0 && r.exitCode != 1)
+        throw GitException(formatGitError(r));
+    return r.stdoutText;
+}
+
 namespace {
 QString buildNewFilePatch(const QString &relPath, const QString &content) {
     QStringList lines = content.split('\n');
