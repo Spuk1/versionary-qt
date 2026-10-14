@@ -63,6 +63,32 @@ private slots:
         QCOMPARE(DiffPatch::filesInPatch(patch), QStringList({"new.txt"}));
         QCOMPARE(DiffPatch::filesInPatch({}), QStringList());
     }
+
+    void lineNumbersTrackHunks() {
+        auto fmt = [](const QList<QPair<int, int>> &m) {
+            QStringList out;
+            for (const auto &p : m)
+                out << QString("%1,%2").arg(p.first).arg(p.second);
+            return out;
+        };
+        QCOMPARE(fmt(DiffPatch::hunkLineNumbers(
+                     {"diff --git a/f b/f", "index 111..222", "--- a/f", "+++ b/f",
+                      "@@ -1,3 +1,3 @@", " ctx", "-old", "+new", " tail",
+                      "\\ No newline at end of file"})),
+                 QStringList({"-1,-1", "-1,-1", "-1,-1", "-1,-1", "-1,-1", "1,1", "2,-1",
+                              "-1,2", "3,3", "-1,-1"}));
+    }
+
+    void lineNumbersResetOnNewHunk() {
+        auto fmt = [](const QList<QPair<int, int>> &m) {
+            QStringList out;
+            for (const auto &p : m)
+                out << QString("%1,%2").arg(p.first).arg(p.second);
+            return out;
+        };
+        QCOMPARE(fmt(DiffPatch::hunkLineNumbers({"@@ -10 +20 @@", " x", "", "-y"})),
+                 QStringList({"-1,-1", "10,20", "11,21", "12,-1"}));
+    }
 };
 
 QTEST_MAIN(TestDiffPatch)

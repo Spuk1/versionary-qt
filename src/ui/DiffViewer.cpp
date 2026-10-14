@@ -1,5 +1,6 @@
 #include "DiffViewer.h"
 #include "ThemeColors.h"
+#include "git/DiffPatch.h"
 
 #include <QApplication>
 #include <QAction>
@@ -314,13 +315,7 @@ public:
 
     QSize sizeHint() const override { return {marginWidth(), 0}; }
 
-    int marginWidth() const {
-        int digits = 2;
-        int lines = qMax(1, m_viewer->lineCount());
-        for (int n = lines; n >= 10; n /= 10)
-            ++digits;
-        return 14 + fontMetrics().horizontalAdvance('9') * digits + 12;
-    }
+    int marginWidth() const { return m_viewer->gutterWidth(); }
 
 protected:
     void paintEvent(QPaintEvent *event) override { m_viewer->paintMargin(event); }
@@ -349,6 +344,10 @@ void DiffViewer::setDiff(const QString &patch) {
     if (m_highlighter)
         m_highlighter->setExtension({});
     setPlainText(patch);
+    QStringList blockTexts;
+    for (QTextBlock b = document()->firstBlock(); b.isValid(); b = b.next())
+        blockTexts << b.text();
+    m_lineNos = DiffPatch::hunkLineNumbers(blockTexts);
     updateSelections();
     updateMarginWidth();
 }
@@ -606,6 +605,21 @@ bool DiffViewer::eventFilter(QObject *watched, QEvent *event) {
     return QPlainTextEdit::eventFilter(watched, event);
 }
 
+int DiffViewer::gutterDigits() const {
+    int digits = 2;
+    int maxNo = 9;
+    for (const auto &pr : m_lineNos)
+        maxNo = qMax(maxNo, qMax(pr.first, pr.second));
+    for (int n = maxNo; n >= 10; n /= 10)
+        ++digits;
+    return digits;
+}
+
+int DiffViewer::gutterWidth() const {
+    const int numW = fontMetrics().horizontalAdvance('9') * gutterDigits() + 8;
+    return 6 + numW + 6 + numW + (m_lineSelect ? 4 + 12 : 0);
+}
+
 void DiffViewer::paintMargin(QPaintEvent *event) {
     QPainter p(m_margin);
     p.fillRect(event->rect(), palette().color(QPalette::Base).darker(105));
@@ -623,9 +637,19 @@ void DiffViewer::paintMargin(QPaintEvent *event) {
             p.setPen(sel ? Qt::white
                          : (isSelectableLine(line) ? palette().color(QPalette::Text)
                                                    : palette().color(QPalette::Disabled, QPalette::Text)));
-            p.drawText(2, top, m_margin->width() - 14, lineHeight, Qt::AlignRight,
-                       QString::number(line));
-            if (isSelectableLine(line)) {
+            int oldNo = -1;
+            int newNo = -1;
+            if (block.blockNumber() < m_lineNos.size()) {
+                oldNo = m_lineNos.at(block.blockNumber()).first;
+                newNo = m_lineNos.at(block.blockNumber()).second;
+            }
+            const int numW = fontMetrics().horizontalAdvance('9') * gutterDigits() + 8;
+            if (oldNo >= 0)
+                p.drawText(6, top, numW, lineHeight, Qt::AlignRight, QString::number(oldNo));
+            if (newNo >= 0)
+                p.drawText(6 + numW + 6, top, numW, lineHeight, Qt::AlignRight,
+                           QString::number(newNo));
+            if (m_lineSelect && isSelectableLine(line)) {
                 p.setPen(sel ? Qt::white : palette().color(QPalette::Text));
                 p.drawText(m_margin->width() - 12, top, 12, lineHeight, Qt::AlignCenter,
                            sel ? "✓" : "○");

@@ -123,3 +123,32 @@ QStringList DiffPatch::filesInPatch(const QString &patch) {
     }
     return out;
 }
+
+QList<QPair<int, int>> DiffPatch::hunkLineNumbers(const QStringList &blocks) {
+    static const QRegularExpression hunkRe(R"(^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@)");
+    QList<QPair<int, int>> out;
+    int oldNo = 1;
+    int newNo = 1;
+    for (const QString &t : blocks) {
+        if (t.startsWith("@@")) {
+            const auto m = hunkRe.match(t);
+            if (m.hasMatch()) {
+                oldNo = m.captured(1).toInt();
+                newNo = m.captured(2).toInt();
+            }
+            out << qMakePair(-1, -1);
+        } else if (t.startsWith("+++") || t.startsWith("---") || t.startsWith("diff --git ")
+                   || t.startsWith("index ") || t.startsWith("\\")) {
+            out << qMakePair(-1, -1);
+        } else if (t.startsWith('+')) {
+            out << qMakePair(-1, newNo++);
+        } else if (t.startsWith('-')) {
+            out << qMakePair(oldNo++, -1);
+        } else if (t.startsWith(' ') || t.isEmpty()) {
+            out << qMakePair(oldNo++, newNo++);
+        } else {
+            out << qMakePair(-1, -1);
+        }
+    }
+    return out;
+}

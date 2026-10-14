@@ -1,5 +1,7 @@
 #pragma once
 
+#include <QList>
+#include <QPair>
 #include <QPlainTextEdit>
 #include <QSet>
 #include <QSyntaxHighlighter>
@@ -47,12 +49,19 @@ public:
     // +/- line selection for partial staging. Enabled by default; read-only
     // viewers (history, stash, compare, file history) disable it so mouse
     // drags do normal text selection for copying instead.
-    void setLineSelectionEnabled(bool on) { m_lineSelect = on; }
+    void setLineSelectionEnabled(bool on) {
+        m_lineSelect = on;
+        updateMarginWidth();
+        m_margin->update();
+    }
     bool lineSelectionEnabled() const { return m_lineSelect; }
     // Selected text with diff markers stripped (leading +/-/space removed,
     // header lines dropped) so pasting yields plain code, not patch text.
     QString selectedCodeText() const;
-    QSet<int> selectedLines() const { return m_selected; }
+
+    // Total gutter width (old/new line-number columns + staging marks).
+    int gutterWidth() const;
+    int gutterDigits() const;    QSet<int> selectedLines() const { return m_selected; }
     void clearSelection();
     int lineCount() const;
 
@@ -85,6 +94,7 @@ private:
     int lineNumberAt(int y) const;
 
     bool m_lineSelect = true;
+    QList<QPair<int, int>> m_lineNos; // old/new file line per block, -1 = blank
     QWidget *m_margin = nullptr;
     QString m_diff;
     QSet<int> m_selected;
