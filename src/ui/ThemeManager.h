@@ -23,13 +23,13 @@ public:
 
     static QString preferenceName(Preference p);
     static Preference preferenceFromName(const QString &name);
+    static QString stylesheet(bool dark);
 
 signals:
     void themeChanged(bool dark);
 
 private:
     static bool systemIsDark();
-    static QString stylesheet(bool dark);
 
     Preference m_preference = Preference::System;
 };

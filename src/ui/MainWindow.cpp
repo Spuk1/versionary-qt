@@ -80,6 +80,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
     m_centerSplitter = splitter;
     splitter->addWidget(m_sourceTree);
     m_rightTabs = new QTabWidget(center);
+    m_rightTabs->setObjectName("MainTabs");
     m_rightTabs->addTab(m_staging, "Changes");
     m_rightTabs->addTab(m_history, "History");
     splitter->addWidget(m_rightTabs);

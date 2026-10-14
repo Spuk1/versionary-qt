@@ -35,8 +35,10 @@
 
 StagingWidget::StagingWidget(GitService *git, RepoManager *repos, QWidget *parent)
     : QWidget(parent), m_git(git), m_repos(repos) {
+    // Plain QWidgets only paint stylesheet backgrounds/borders with this.
+    setAttribute(Qt::WA_StyledBackground, true);
     auto *layout = new QVBoxLayout(this);
-    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setContentsMargins(8, 8, 8, 8);
     m_conflictBar = new QWidget(this);
     m_conflictBar->setVisible(false);
     auto *barLayout = new QHBoxLayout(m_conflictBar);

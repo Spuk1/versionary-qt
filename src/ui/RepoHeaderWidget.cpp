@@ -8,9 +8,11 @@
 
 RepoHeaderWidget::RepoHeaderWidget(RepoManager *repos, QWidget *parent)
     : QWidget(parent), m_repos(repos) {
+    // Plain QWidgets only paint stylesheet backgrounds/borders with this.
+    setAttribute(Qt::WA_StyledBackground, true);
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
     auto *layout = new QVBoxLayout(this);
-    layout->setContentsMargins(4, 2, 4, 2);
+    layout->setContentsMargins(8, 5, 8, 5);
     layout->setSpacing(0);
     m_nameLabel = new QLabel(this);
     m_nameLabel->setProperty("class", "header");

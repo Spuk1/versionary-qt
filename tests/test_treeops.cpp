@@ -14,6 +14,7 @@
 #include <QMimeData>
 #include <QSignalSpy>
 #include <QTemporaryDir>
+#include <QThreadPool>
 #include <QTreeWidget>
 #include <QtTest/QtTest>
 
@@ -166,6 +167,16 @@ private slots:
         doubleClick(anyStash);
         QVERIFY(popped.wait(15000));
         QVERIFY(git.listChanges().contains("a.txt"));
+        // Drain pool workers before the stack widgets die: completions
+        // re-arm new workers (refresh cascades), and a straggler would
+        // dereference the freed widget/GitService (flaky teardown abort).
+        // Mirrors MainWindow::~MainWindow.
+        for (int i = 0; i < 20; ++i) {
+            QThreadPool::globalInstance()->waitForDone(10000);
+            QTest::qWait(50);
+            if (QThreadPool::globalInstance()->activeThreadCount() == 0)
+                break;
+        }
     }
 
     void cleanupTestCase() { delete m_tmp; }

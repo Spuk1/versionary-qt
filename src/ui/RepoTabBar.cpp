@@ -17,6 +17,8 @@ const char *RepoTabBar::kDragMime = "application/x-versionary-repotab";
 
 RepoTabBar::RepoTabBar(RepoManager *repos, QWidget *parent)
     : QWidget(parent), m_repos(repos) {
+    // Needed for the stylesheet bottom divider to paint on a plain QWidget.
+    setAttribute(Qt::WA_StyledBackground, true);
     auto *layout = new QHBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
     m_strip = new QWidget(this);

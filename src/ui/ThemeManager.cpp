@@ -123,16 +123,39 @@ QString ThemeManager::stylesheet(bool dark) {
     const QString tabChecked = dark ? "#222831" : "#dbe8fb";
     return QString(
         "QMainWindow, QWidget#Central { background: %1; color: %2; }"
+        // Panel cards: 1px faint outline + radius, mirroring the bordered
+        // CommitsCard/ChangesGroup/Header boxes of the original client.
+        "SourceTreeWidget, StagingWidget, HistoryWidget { background: %3;"
+        " border: 1px solid %4; border-radius: 10px; }"
+        "RepoHeaderWidget { background: %3; border: 1px solid %4; border-radius: 8px; }"
+        "RepoTabBar { border-bottom: 1px solid %4; }"
+        // Inner lists share the card background and drop their own border,
+        // so each panel reads as one faintly outlined card. (Must stay an
+        // opaque color: delegates derive light/dark from the palette, and
+        // `transparent` resolves to lightness 0 = always dark.)
+        "SourceTreeWidget QTreeWidget, StagingWidget QListWidget, HistoryWidget QListView,"
+        " HistoryWidget QListWidget { background: %3; border: none; border-radius: 0; }"
+        // Diff/detail panes stay inset bordered surfaces.
+        "StagingWidget DiffViewer, StagingWidget SideBySideViewer QPlainTextEdit,"
+        " HistoryWidget QTextEdit, HistoryWidget DiffViewer { background: %8;"
+        " border: 1px solid %4; border-radius: 6px; }"
         "QTreeWidget, QListWidget, QListView, QPlainTextEdit, QTextEdit {"
         " background: %3; color: %2; border: 1px solid %4; border-radius: 6px; }"
         "QTreeWidget::item:hover, QListWidget::item:hover { background: %5; }"
         "QTreeWidget::item:selected, QListWidget::item:selected { background: %6; color: %2; }"
         "QTabWidget::pane { border: 1px solid %4; background: %3; border-radius: 6px; }"
+        // Main Changes/History tabs are pills (like CommitTab), not a box.
+        "QTabWidget#MainTabs::pane { border: none; background: transparent; }"
+        "QTabWidget#MainTabs QTabBar::tab { background: %8; color: %2;"
+        " border: 1px solid %4; border-radius: 8px; padding: 5px 14px; margin: 3px 2px; }"
+        "QTabWidget#MainTabs QTabBar::tab:selected { background: %6;"
+        " border-color: #2563eb; font-weight: 600; }"
         "QTabBar::tab { background: %7; color: %2; padding: 6px 14px;"
         " border: 1px solid %4; border-bottom: none;"
         " border-top-left-radius: 6px; border-top-right-radius: 6px; }"
         "QTabBar::tab:selected { background: %3; }"
-        "QToolBar { background: %1; border: none; spacing: 4px; font-size: 14px; }"
+        "QToolBar { background: %1; border: none; border-bottom: 1px solid %4;"
+        " spacing: 4px; font-size: 14px; }"
         "QToolButton { background: transparent; border: 1px solid transparent;"
         " border-radius: 6px; padding: 8px; color: %2; font-size: 14px; }"
         "QToolButton:hover { background: %5; border: 1px solid %4; }"
@@ -153,7 +176,7 @@ QString ThemeManager::stylesheet(bool dark) {
         "QSplitter::handle:horizontal { width: 3px; }"
         "QMenu { background: %3; color: %2; border: 1px solid %4; }"
         "QMenu::item:selected { background: %5; }"
-        "QStatusBar { background: %1; color: %2; }"
+        "QStatusBar { background: %1; color: %2; border-top: 1px solid %4; }"
         "QLabel.muted { color: %11; }"
         "QLabel.header { font-size: 17px; font-weight: 600; }"
         "QLabel.branch { font-size: 13px; }")

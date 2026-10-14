@@ -12,6 +12,7 @@
 #include <QSignalSpy>
 #include <QStandardPaths>
 #include <QTemporaryDir>
+#include <QThreadPool>
 #include <QtTest/QtTest>
 
 // Regression test for the intermittent commit crash: doCommit's completion
@@ -82,6 +83,14 @@ private slots:
         QVERIFY(!log.isEmpty());
         QCOMPARE(log.first().message, QString("widget commit"));
         QVERIFY(message->currentText().isEmpty());
+        // Drain pool workers before the stack widgets die (the commit
+        // completion re-arms loadChanges); mirrors MainWindow::~MainWindow.
+        for (int i = 0; i < 20; ++i) {
+            QThreadPool::globalInstance()->waitForDone(10000);
+            QTest::qWait(50);
+            if (QThreadPool::globalInstance()->activeThreadCount() == 0)
+                break;
+        }
     }
 
     void cleanupTestCase() { delete m_tmp; }

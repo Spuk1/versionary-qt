@@ -120,8 +120,10 @@ void applyBadges(QTreeWidgetItem *parent, const QMap<QString, QString> &suffixes
 
 SourceTreeWidget::SourceTreeWidget(GitService *git, RepoManager *repos, QWidget *parent)
     : QWidget(parent), m_git(git), m_repos(repos) {
+    // Plain QWidgets only paint stylesheet backgrounds/borders with this.
+    setAttribute(Qt::WA_StyledBackground, true);
     auto *layout = new QVBoxLayout(this);
-    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setContentsMargins(6, 6, 6, 6);
     m_tree = new QTreeWidget(this);
     m_tree->setHeaderHidden(true);
     m_tree->setContextMenuPolicy(Qt::CustomContextMenu);

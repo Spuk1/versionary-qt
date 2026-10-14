@@ -1,4 +1,5 @@
 #include "ui/ThemeColors.h"
+#include "ui/ThemeManager.h"
 
 #include <QtTest/QtTest>
 
@@ -42,6 +43,20 @@ private slots:
         // Avatar hue is deterministic per name.
         QCOMPARE(ThemeColors::avatarBg("Alice"), ThemeColors::avatarBg("Alice"));
         QVERIFY(ThemeColors::avatarBg("Alice") != ThemeColors::avatarBg("Bob"));
+    }
+
+    void panelCardsUseFaintBorders() {
+        // The structured look comes from 1px panel-border outlines on the
+        // three main panels (mirrors CommitsCard/ChangesGroup in App.css).
+        for (bool dark : {true, false}) {
+            const QString ss = ThemeManager::stylesheet(dark);
+            QVERIFY(ss.contains("SourceTreeWidget, StagingWidget, HistoryWidget"));
+            QVERIFY(ss.contains("border-radius: 10px"));
+            QVERIFY(ss.contains("QTabWidget#MainTabs::pane"));
+            QVERIFY(ss.contains("RepoHeaderWidget"));
+        }
+        QVERIFY(ThemeManager::stylesheet(true).contains("#3a3f46"));
+        QVERIFY(ThemeManager::stylesheet(false).contains("#d2dbe8"));
     }
 };
 
