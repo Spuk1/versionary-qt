@@ -29,8 +29,9 @@ QString CompareDialog::defaultTarget(const QString &source, const QStringList &b
 }
 
 CompareDialog::CompareDialog(GitService *git, const QString &source,
-                             const QStringList &branches, QWidget *parent)
-    : QDialog(parent), m_git(git), m_source(source) {
+                             const QStringList &branches, bool includeWorkdir,
+                             QWidget *parent)
+    : QDialog(parent), m_git(git), m_source(source), m_includeWorkdir(includeWorkdir) {
     setWindowTitle("Compare " + source.trimmed().left(60));
     resize(800, 560);
     auto *layout = new QVBoxLayout(this);
@@ -48,6 +49,11 @@ CompareDialog::CompareDialog(GitService *git, const QString &source,
     topRow->addWidget(new QLabel("with", this));
     topRow->addWidget(m_targetBox, 1);
     layout->addLayout(topRow);
+    if (m_includeWorkdir) {
+        auto *note = new QLabel("Including uncommitted changes on " + source, this);
+        note->setProperty("class", "muted");
+        layout->addWidget(note);
+    }
     auto *splitter = new QSplitter(Qt::Horizontal, this);
     m_list = new QListWidget(splitter);
     m_viewer = new DiffViewer(splitter);
@@ -78,10 +84,13 @@ void CompareDialog::loadComparison() {
         return;
     const QString source = m_source;
     const QString target = this->target();
+    const bool includeWorkdir = m_includeWorkdir;
     if (m_viewer)
         m_viewer->setDiff("Loading…");
     runBackground<QString>(
-        this, [this, source, target] { return m_git->compareBranches(target, source); },
+        this, [this, source, target, includeWorkdir] {
+            return m_git->compareBranches(target, source, includeWorkdir);
+        },
         [this, source, target](const QString &patch) {
             if (source != m_source || target != this->target())
                 return; // user switched target while loading

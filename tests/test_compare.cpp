@@ -6,6 +6,7 @@
 #include "ui/CompareDialog.h"
 
 #include <QComboBox>
+#include <QLabel>
 #include <QListWidget>
 #include <QTemporaryDir>
 #include <QtTest/QtTest>
@@ -53,6 +54,10 @@ private slots:
         CompareDialog dlg(nullptr, "feature", {"main", "develop", "feature"});
         QCOMPARE(dlg.source(), QString("feature"));
         QCOMPARE(dlg.target(), QString("develop"));
+        bool noted = false;
+        for (QLabel *l : dlg.findChildren<QLabel *>())
+            noted = noted || l->text().contains("uncommitted");
+        QVERIFY(!noted);
         dlg.setComparison(kPatch);
         auto *list = dlg.findChild<QListWidget *>();
         QVERIFY(list != nullptr);
@@ -95,8 +100,12 @@ private slots:
         ApiClient api;
         GitService svc(&auth, &ssh, &api);
         svc.setRepoPath(work);
-        CompareDialog dlg(&svc, "feature", {"main", "feature"});
+        CompareDialog dlg(&svc, "feature", {"main", "feature"}, true);
         QCOMPARE(dlg.target(), QString("main"));
+        bool noted = false;
+        for (QLabel *l : dlg.findChildren<QLabel *>())
+            noted = noted || l->text().contains("uncommitted");
+        QVERIFY(noted);
         dlg.show();
         dlg.loadComparison();
         auto *list = dlg.findChild<QListWidget *>();

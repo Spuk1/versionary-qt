@@ -123,17 +123,30 @@ QString GitService::commitFileDiff(const QString &oid, const QString &filepath, 
     return r.stdoutText;
 }
 
-QString GitService::compareBranches(const QString &base, const QString &head) {
+QString GitService::compareBranches(const QString &base, const QString &head,
+                                      bool includeWorkdir) {
     requireRepo();
     const QString b = base.trimmed();
     const QString h = head.trimmed();
     if (b.isEmpty() || h.isEmpty())
         throw GitException("Invalid branches");
     // `git diff` exits 1 when differences exist: only real failures throw.
-    const GitResult r = m_git.run({"diff", "--no-color", "-U3", b + "..." + h, "--"}, m_repo);
-    if (r.exitCode != 0 && r.exitCode != 1)
-        throw GitException(formatGitError(r));
-    return r.stdoutText;
+    auto runDiff = [this](const QStringList &args) {
+        const GitResult r = m_git.run(args, m_repo);
+        if (r.exitCode != 0 && r.exitCode != 1)
+            throw GitException(formatGitError(r));
+        return r.stdoutText;
+    };
+    QString patch = runDiff({"diff", "--no-color", "-U3", b, h, "--"});
+    if (includeWorkdir) {
+        const QString workdir = runDiff({"diff", "--no-color", "-U3", "HEAD", "--"});
+        if (!workdir.trimmed().isEmpty()) {
+            if (!patch.isEmpty() && !patch.endsWith('\n'))
+                patch += '\n';
+            patch += workdir;
+        }
+    }
+    return patch;
 }
 
 namespace {

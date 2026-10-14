@@ -458,7 +458,7 @@ void SourceTreeWidget::applyStashFileRef(const QString &ref, const QString &file
 }
 
 void SourceTreeWidget::showCompareDialog(const QString &ref) {
-    auto *dlg = new CompareDialog(m_git, ref, m_localBranches, this);
+    auto *dlg = new CompareDialog(m_git, ref, m_localBranches, ref == m_currentHead, this);
     dlg->setAttribute(Qt::WA_DeleteOnClose);
     dlg->show();
     dlg->loadComparison();

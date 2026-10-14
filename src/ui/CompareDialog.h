@@ -8,15 +8,17 @@ class GitService;
 class QListWidget;
 class QComboBox;
 
-// Branch comparison window: full diff of the source branch since it forked
-// from the target (`git diff target...source`, like a pull-request compare
-// view), with a file list on the left. The target defaults to develop
-// (main/master when the source itself is develop) but is freely choosable.
+// Branch comparison window: full tip-to-tip diff of the source branch
+// against the target, with a file list on the left. When the source is
+// the checked-out branch, its uncommitted changes are included (and noted).
+// The target defaults to develop (main/master when the source itself is
+// develop) but is freely choosable.
 class CompareDialog : public QDialog {
     Q_OBJECT
 public:
     explicit CompareDialog(GitService *git, const QString &source,
-                           const QStringList &branches, QWidget *parent = nullptr);
+                           const QStringList &branches, bool includeWorkdir = false,
+                           QWidget *parent = nullptr);
 
     // Default compare target: develop, else main/master when the source
     // itself is develop, else the first other branch.
@@ -34,6 +36,7 @@ private slots:
 private:
     GitService *m_git;
     QString m_source;
+    bool m_includeWorkdir = false;
     QString m_patch;
     QStringList m_files;
     QComboBox *m_targetBox = nullptr;

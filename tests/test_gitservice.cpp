@@ -287,9 +287,24 @@ private slots:
         f.close();
         run({"add", "."});
         run({"commit", "-m", "cmp commit"});
-        // Triple-dot: cmp-a's changes since forking from main.
+        // Tip-to-tip: cmp-a's changes versus main.
         const QString patch = m_git->compareBranches("main", "cmp-a");
         QVERIFY(patch.contains("+cmp-data"));
+        // Reverse direction shows the other side's commits too (the old
+        // triple-dot form hid everything on the target side).
+        QVERIFY(m_git->compareBranches("cmp-a", "main").contains("-cmp-data"));
+        // Unstaged workdir changes join only when asked for.
+        QFile w(m_work + "/a.txt");
+        QVERIFY(w.open(QIODevice::Append | QIODevice::Text));
+        w.write("workdir-line\n");
+        w.close();
+        const QString withWd = m_git->compareBranches("main", "cmp-a", true);
+        QVERIFY(withWd.contains("+cmp-data"));
+        QVERIFY(withWd.contains("+workdir-line"));
+        const QString withoutWd = m_git->compareBranches("main", "cmp-a", false);
+        QVERIFY(withoutWd.contains("+cmp-data"));
+        QVERIFY(!withoutWd.contains("workdir-line"));
+        run({"checkout", "--", "a.txt"});
         // Same ref on both sides: empty (also covers diff's exit code 0).
         QVERIFY(m_git->compareBranches("cmp-a", "cmp-a").trimmed().isEmpty());
         bool threw = false;
