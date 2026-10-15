@@ -114,5 +114,6 @@ protected:
     int m_busyCount = 0;
     qint64 m_lastFocusFetch = 0;
     qint64 m_busySince = 0;
-    QString m_headerAction;
+    qint64 m_lastFetchFailure = 0;
+    int m_autoFetchFailures = 0;
 };
