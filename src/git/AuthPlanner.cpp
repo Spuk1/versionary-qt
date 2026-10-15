@@ -36,6 +36,17 @@ AuthPlanner::AuthPlanner(std::function<QString(const QString &)> sshKeyFor,
     : m_sshKeyFor(std::move(sshKeyFor)), m_credentials(std::move(credentials)) {}
 
 QString AuthPlanner::buildSshCommand(const QString &keyPath) {
+#ifdef Q_OS_WIN
+    // OpenSSH on Windows accepts forward slashes; backslashes (even doubled)
+    // are treated literally inside the quoted -i argument and break key
+    // lookup for paths like C:\Users\…. Normalize instead of escaping.
+    QString normalized = keyPath;
+    normalized.replace('\\', '/');
+    normalized.replace('"', "\"\"");
+    return QString("ssh -i \"%1\" -o IdentitiesOnly=yes -o BatchMode=yes "
+                   "-o StrictHostKeyChecking=accept-new")
+        .arg(normalized);
+#else
     QString escaped = keyPath;
     escaped.replace('\\', "\\\\");
     escaped.replace('"', "\\\"");
@@ -44,6 +55,7 @@ QString AuthPlanner::buildSshCommand(const QString &keyPath) {
     return QString("ssh -i \"%1\" -o IdentitiesOnly=yes -o BatchMode=yes "
                    "-o StrictHostKeyChecking=accept-new")
         .arg(escaped);
+#endif
 }
 
 QStringList AuthPlanner::rewriteArgs(const QStringList &hosts, bool toSsh) {
@@ -69,6 +81,35 @@ QStringList AuthPlanner::rewriteArgs(const QStringList &hosts, bool toSsh) {
 
 QString AuthPlanner::ensureAskpassScript() {
     const QString dir = QStandardPaths::writableLocation(QStandardPaths::TempLocation);
+#ifdef Q_OS_WIN
+    // GIT_ASKPASS is spawned via CreateProcess: a sh script with a shebang
+    // is not executable on Windows and setPermissions(+x) is a no-op.
+    // Emit a batch file instead.
+    const QString file = dir + "/versionary-askpass.bat";
+    if (QFile::exists(file))
+        return file;
+    QFile f(file);
+    if (!f.open(QIODevice::WriteOnly | QIODevice::Text | QIODevice::Truncate))
+        return {};
+    f.write("@echo off\r\n"
+            "echo %1 | findstr /I \"Username\" >nul\r\n"
+            "if not errorlevel 1 (\r\n"
+            "  if defined OPEN_GIT_ASKPASS_USERNAME (\r\n"
+            "    echo %OPEN_GIT_ASKPASS_USERNAME%\r\n"
+            "  ) else (\r\n"
+            "    echo x-access-token\r\n"
+            "  )\r\n"
+            "  exit /b 0\r\n"
+            ")\r\n"
+            "echo %1 | findstr /I \"Password\" >nul\r\n"
+            "if not errorlevel 1 (\r\n"
+            "  echo %OPEN_GIT_ASKPASS_PASSWORD%\r\n"
+            "  exit /b 0\r\n"
+            ")\r\n"
+            "echo.\r\n");
+    f.close();
+    return file;
+#else
     const QString file = dir + "/versionary-askpass.sh";
     if (QFile::exists(file))
         return file;
@@ -95,6 +136,7 @@ QString AuthPlanner::ensureAskpassScript() {
                      | QFile::ReadGroup | QFile::ExeGroup | QFile::ReadOther
                      | QFile::ExeOther);
     return file;
+#endif
 }
 
 AuthPlanner::Plan AuthPlanner::planFor(const QString &repoPath, bool preferOAuth) const {
