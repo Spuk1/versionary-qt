@@ -167,7 +167,8 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
     connect(m_staging, &StagingWidget::unstagedCountChanged, this, [&](int n) {
         m_rightTabs->setTabText(0, n > 0 ? QString("Changes (%1)").arg(n) : "Changes");
     });
-    connect(qApp, &QApplication::focusChanged, this, &MainWindow::checkFocusFetch);
+    connect(qApp, &QApplication::applicationStateChanged, this,
+            &MainWindow::onApplicationStateChanged);
 
     m_repos->load();
     if (m_repos->repositories().isEmpty()) {
@@ -182,8 +183,9 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
     updateEmptyState();
     restoreLayout();
 
-    // No interval fetching: fetches happen on window focus (throttled in
-    // checkFocusFetch) or when explicitly triggered by the user.
+    // No interval fetching: local panels refresh on every window
+    // activation, network fetches happen throttled (see
+    // onApplicationStateChanged) or when explicitly triggered by the user.
     auto *busyWatchdog = new QTimer(this);
     busyWatchdog->setInterval(60000);
     connect(busyWatchdog, &QTimer::timeout, this, &MainWindow::watchBusyTimeout);
@@ -797,13 +799,20 @@ void MainWindow::refreshAfterBranchChange() {
     m_history->refresh();
 }
 
-void MainWindow::checkFocusFetch() {
-    if (!isActiveWindow())
-        return; // never fetch while another application is focused
-    const qint64 now = QDateTime::currentMSecsSinceEpoch();
-    if (now - m_lastFocusFetch < 60000)
+void MainWindow::onApplicationStateChanged(Qt::ApplicationState state) {
+    // Window (re)activation only: focusChanged would also fire on every
+    // intra-app widget switch and spam refreshes while interacting.
+    if (state != Qt::ApplicationActive)
         return;
     if (m_repos->selectedPath().isEmpty() || m_header->isBusy())
+        return;
+    // Local changes always refresh on refocus; the network fetch below
+    // stays on its throttle.
+    refreshHead();
+    m_sourceTree->refresh();
+    m_staging->refresh();
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    if (now - m_lastFocusFetch < 60000)
         return;
     m_lastFocusFetch = now;
     doFetch();

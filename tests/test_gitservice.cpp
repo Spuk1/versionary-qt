@@ -64,6 +64,18 @@ private slots:
         QVERIFY(m_git->currentBranchHasUpstream());
     }
 
+    void listsUntrackedFiles() {
+        QFile f(m_work + "/brand-new-untracked.txt");
+        QVERIFY(f.open(QIODevice::WriteOnly | QIODevice::Text));
+        f.write("new\n");
+        f.close();
+        const QStringList untracked = m_git->listUntracked();
+        QVERIFY(untracked.contains("brand-new-untracked.txt"));
+        QVERIFY(!untracked.contains("a.txt")); // tracked fixture file
+        QVERIFY(m_git->listChanges().contains("brand-new-untracked.txt"));
+        QVERIFY(QFile::remove(m_work + "/brand-new-untracked.txt"));
+    }
+
     void amendAndUndo() {
         GitRunner git;
         auto run = [&](const QStringList &args) {

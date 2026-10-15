@@ -4,7 +4,7 @@ pkgver=1.0.0.r0.g0000000
 pkgrel=1
 pkgdesc="A fast, native Qt Git GUI client"
 arch=('x86_64')
-url="https://github.com/spuk1/versionary"
+url="https://github.com/spuk1/versionary-qt"
 license=('GPL-3.0-or-later')
 depends=('qt6-base' 'git' 'hicolor-icon-theme' 'desktop-file-utils')
 makedepends=('git' 'cmake' 'gcc')
@@ -15,7 +15,13 @@ sha256sums=('SKIP')
 
 pkgver() {
   cd "$pkgname"
-  printf "1.0.0.r%s.g%s" "$(git rev-list --count HEAD)" "$(git rev-parse --short HEAD)"
+  # Release tags (vX.Y.Z, created by the Release workflow) give a
+  # meaningful version; fall back to commit count before the first tag.
+  if git describe --long --tags >/dev/null 2>&1; then
+    git describe --long --tags | sed 's/^v//;s/\([^-]*-g\)/r\1/;s/-/./g'
+  else
+    printf "0.0.0.r%s.g%s" "$(git rev-list --count HEAD)" "$(git rev-parse --short HEAD)"
+  fi
 }
 
 build() {
@@ -25,18 +31,21 @@ build() {
   # the file itself is never packaged.
   dotenv_get() {
     [ -f .env ] || return 0
-    grep -E "^[[:space:]]*$1[[:space:]]*=" .env | tail -1 \
-      | sed -E "s/^[^=]*=[[:space:]]*['\"]?//;s/['\"]?[[:space:]]*$//"
+    for key in "$@"; do
+      val=$(grep -E "^[[:space:]]*$key[[:space:]]*=" .env | tail -1 \
+        | sed -E "s/^[^=]*=[[:space:]]*['\"]?//;s/['\"]?[[:space:]]*$//")
+      [ -n "$val" ] && { printf '%s' "$val"; return 0; }
+    done
   }
   cmake -S "$pkgname" -B build \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_INSTALL_PREFIX=/usr \
-    -DVERSIONARY_GITHUB_CLIENT_ID="${VERSIONARY_GITHUB_CLIENT_ID:-$(dotenv_get GITHUB_CLIENT_ID)}" \
-    -DVERSIONARY_GITHUB_CLIENT_SECRET="${VERSIONARY_GITHUB_CLIENT_SECRET:-$(dotenv_get CLIENT_GITHUB_SECRET)}" \
-    -DVERSIONARY_BITBUCKET_CLIENT_ID="${VERSIONARY_BITBUCKET_CLIENT_ID:-$(dotenv_get BITBUCKET_CLIENT_ID)}" \
-    -DVERSIONARY_BITBUCKET_CLIENT_SECRET="${VERSIONARY_BITBUCKET_CLIENT_SECRET:-$(dotenv_get CLIENT_BITBUCKET_SECRET)}" \
-    -DVERSIONARY_GITLAB_CLIENT_ID="${VERSIONARY_GITLAB_CLIENT_ID:-$(dotenv_get GITLAB_CLIENT_ID)}" \
-    -DVERSIONARY_GITLAB_CLIENT_SECRET="${VERSIONARY_GITLAB_CLIENT_SECRET:-$(dotenv_get CLIENT_GITLAB_SECRET)}"
+    -DVERSIONARY_GITHUB_CLIENT_ID="${VERSIONARY_GITHUB_CLIENT_ID:-$(dotenv_get VERSIONARY_GITHUB_CLIENT_ID GITHUB_CLIENT_ID)}" \
+    -DVERSIONARY_GITHUB_CLIENT_SECRET="${VERSIONARY_GITHUB_CLIENT_SECRET:-$(dotenv_get VERSIONARY_GITHUB_CLIENT_SECRET CLIENT_GITHUB_SECRET)}" \
+    -DVERSIONARY_BITBUCKET_CLIENT_ID="${VERSIONARY_BITBUCKET_CLIENT_ID:-$(dotenv_get VERSIONARY_BITBUCKET_CLIENT_ID BITBUCKET_CLIENT_ID)}" \
+    -DVERSIONARY_BITBUCKET_CLIENT_SECRET="${VERSIONARY_BITBUCKET_CLIENT_SECRET:-$(dotenv_get VERSIONARY_BITBUCKET_CLIENT_SECRET CLIENT_BITBUCKET_SECRET)}" \
+    -DVERSIONARY_GITLAB_CLIENT_ID="${VERSIONARY_GITLAB_CLIENT_ID:-$(dotenv_get VERSIONARY_GITLAB_CLIENT_ID GITLAB_CLIENT_ID)}" \
+    -DVERSIONARY_GITLAB_CLIENT_SECRET="${VERSIONARY_GITLAB_CLIENT_SECRET:-$(dotenv_get VERSIONARY_GITLAB_CLIENT_SECRET CLIENT_GITLAB_SECRET)}"
   cmake --build build -j"$(nproc)"
 }
 

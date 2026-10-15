@@ -32,22 +32,38 @@ private slots:
             auto *sp = new QSplitter(Qt::Horizontal);
             sp->addWidget(new QWidget(sp));
             sp->addWidget(new QWidget(sp));
-            sp->setSizes({100, 300});
+            // Shown at a fixed size: hidden splitters report style-dependent
+            // sizes, and live sizes round-trip inexactly through save/restore
+            // on some styles (Windows CI) — so fidelity is asserted on the
+            // persisted bytes instead of pixels.
+            sp->setFixedSize(400, 200);
             return sp;
         };
         QScopedPointer<QSplitter> src(makeSplitter());
+        src->show();
+        QVERIFY(QTest::qWaitForWindowExposed(src.data(), 15000));
+        src->setSizes({100, 300});
+        QByteArray saved;
         {
             QSettings s(iniPath, QSettings::IniFormat);
             MainWindow::saveSplitterState(s, "main/centerSplitter", src.data());
             s.sync();
+            saved = s.value("main/centerSplitter").toByteArray();
         }
+        QVERIFY(!saved.isEmpty());
         QScopedPointer<QSplitter> dst(makeSplitter());
-        dst->setSizes({300, 100});
+        dst->show();
+        QVERIFY(QTest::qWaitForWindowExposed(dst.data(), 15000));
         {
             QSettings s(iniPath, QSettings::IniFormat);
             MainWindow::restoreSplitterState(s, "main/centerSplitter", dst.data());
+            MainWindow::saveSplitterState(s, "main/centerSplitterRestored", dst.data());
+            s.sync();
+            QCOMPARE(s.value("main/centerSplitterRestored").toByteArray(), saved);
         }
-        QCOMPARE(dst->sizes(), src->sizes());
+        // Restored geometry must also be sane (catches silent clamping).
+        QCOMPARE(dst->sizes().size(), 2);
+        QVERIFY(dst->sizes().at(0) > 0 && dst->sizes().at(1) > 0);
     }
 
     void panelSplittersHaveObjectNames() {
