@@ -189,22 +189,35 @@ jobs:
           file "$APP/Contents/MacOS/Versionary"
           # Icon: build icon.icns from the hicolor PNGs (repo has no .icns).
           # CFBundleIconFile must reference a .icns basename, not a .png.
-          SRC_PNG="packaging/icons/hicolor/256x256/apps/io.github.spuk1.Versionary.png"
-          if [ -f "$SRC_PNG" ]; then
+          # Prefer the largest PNG to minimise upscaling.
+          SRC_PNG=""
+          for CAND in "packaging/icons/hicolor/512x512/apps/io.github.spuk1.Versionary.png" \
+                      "packaging/icons/hicolor/256x256/apps/io.github.spuk1.Versionary.png"; do
+            if [ -f "$CAND" ]; then SRC_PNG="$CAND"; break; fi
+          done
+          if [ -n "$SRC_PNG" ]; then
             rm -rf /tmp/icon.iconset
             mkdir -p /tmp/icon.iconset
-            for SZ in 16 32 64 128 256 512; do
-              sips -z $SZ $SZ "$SRC_PNG" --out "/tmp/icon.iconset/icon_${SZ}x${SZ}.png" >/dev/null
-              sips -z $SZ $SZ "$SRC_PNG" --out "/tmp/icon.iconset/icon_${SZ}x${SZ}@2x.png" >/dev/null || true
-            done
-            # 1024px from 256px source is an upscale, but keeps iconutil happy.
-            cp "/tmp/icon.iconset/icon_256x256.png" "/tmp/icon.iconset/icon_512x512@2x.png" || true
-            cp "/tmp/icon.iconset/icon_256x256.png" "/tmp/icon.iconset/icon_128x128@2x.png" || true
-            iconutil -c icns /tmp/icon.iconset -o "$APP/Contents/Resources/icon.icns"
-            /usr/libexec/PlistBuddy -c "Set :CFBundleIconFile icon.icns" "$APP/Contents/Info.plist" \
-              || /usr/libexec/PlistBuddy -c "Add :CFBundleIconFile string icon.icns" "$APP/Contents/Info.plist"
+            # iconutil accepts ONLY these 10 canonical names with exact pixel
+            # sizes; anything else (e.g. icon_64x64.png) fails the build.
+            sips -z 16 16 "$SRC_PNG" --out "/tmp/icon.iconset/icon_16x16.png" >/dev/null
+            sips -z 32 32 "$SRC_PNG" --out "/tmp/icon.iconset/icon_16x16@2x.png" >/dev/null
+            sips -z 32 32 "$SRC_PNG" --out "/tmp/icon.iconset/icon_32x32.png" >/dev/null
+            sips -z 64 64 "$SRC_PNG" --out "/tmp/icon.iconset/icon_32x32@2x.png" >/dev/null
+            sips -z 128 128 "$SRC_PNG" --out "/tmp/icon.iconset/icon_128x128.png" >/dev/null
+            sips -z 256 256 "$SRC_PNG" --out "/tmp/icon.iconset/icon_128x128@2x.png" >/dev/null
+            sips -z 256 256 "$SRC_PNG" --out "/tmp/icon.iconset/icon_256x256.png" >/dev/null
+            sips -z 512 512 "$SRC_PNG" --out "/tmp/icon.iconset/icon_256x256@2x.png" >/dev/null
+            sips -z 512 512 "$SRC_PNG" --out "/tmp/icon.iconset/icon_512x512.png" >/dev/null
+            sips -z 1024 1024 "$SRC_PNG" --out "/tmp/icon.iconset/icon_512x512@2x.png" >/dev/null
+            if iconutil -c icns /tmp/icon.iconset -o "$APP/Contents/Resources/icon.icns"; then
+              /usr/libexec/PlistBuddy -c "Set :CFBundleIconFile icon.icns" "$APP/Contents/Info.plist" \
+                || /usr/libexec/PlistBuddy -c "Add :CFBundleIconFile string icon.icns" "$APP/Contents/Info.plist"
+            else
+              echo "::warning::iconutil failed, shipping without custom icon"
+            fi
           else
-            echo "::warning::source icon $SRC_PNG missing, shipping without custom icon"
+            echo "::warning::source icon missing, shipping without custom icon"
           fi
           macdeployqt "$APP" -always-overwrite -verbose=2
           # macdeployqt rewrites dylibs/rpaths, invalidating signatures:
@@ -215,7 +228,7 @@ jobs:
           macdeployqt "$APP" -dmg -always-overwrite
           DMG="$(dirname "$APP")/$(basename "$APP" .app).dmg"
           # macdeployqt names the dmg after the app; fall back to glob.
-          if [ ! -f "$DMG" ]; then DMG="$(ls -t dist/*.dmg build/*.dmg *.dmg 2>/dev/null | head -n1)"; fi
+          if [ ! -f "$DMG" ]; then DMG="$(ls -t dist/*.dmg build/*.dmg *.dmg 2>/dev/null | head -n1 || true)"; fi
           test -f "$DMG" || { echo "::error::DMG not produced"; exit 1; }
           mv "$DMG" "Versionary-${V}-macOS-arm64.dmg"
           # Verify the shipped DMG actually mounts and contains the app.
