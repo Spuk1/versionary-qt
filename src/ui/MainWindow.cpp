@@ -3,6 +3,7 @@
 #include "AsyncHelper.h"
 #include "BranchDialog.h"
 #include "CloneDialog.h"
+#include "ErrorDialog.h"
 #include "HistoryWidget.h"
 #include "OnboardingDialog.h"
 #include "OperationProgressDialog.h"
@@ -33,7 +34,6 @@
 #include <QPointer>
 #include <QThreadPool>
 #include <QInputDialog>
-#include <QMessageBox>
 #include <QLabel>
 #include <QPushButton>
 #include <QSettings>
@@ -483,7 +483,7 @@ void MainWindow::doFetchAll() {
                 progress->deleteLater();
             }
             setBusy(false);
-            showOpError(e);
+            showOpError("Fetch All", e);
         });
 }
 
@@ -512,7 +512,7 @@ void MainWindow::doPull() {
                 progress->deleteLater();
             }
             setBusy(false);
-            showOpError(e);
+            showOpError("Pull", e);
         });
 }
 
@@ -538,7 +538,7 @@ void MainWindow::doPush() {
             }
             pushPlain();
         },
-        [this](const QString &e) { showStatus(e, true); });
+        [this](const QString &e) { showOpError("Push", e); });
 }
 
 void MainWindow::pushPlain() {
@@ -564,7 +564,7 @@ void MainWindow::pushPlain() {
                 progress->deleteLater();
             }
             setBusy(false);
-            showOpError(e);
+            showOpError("Push", e);
         });
 }
 
@@ -591,7 +591,7 @@ void MainWindow::pushWithUpstream() {
                 progress->deleteLater();
             }
             setBusy(false);
-            showOpError(e);
+            showOpError("Push", e);
         });
 }
 
@@ -618,10 +618,10 @@ void MainWindow::openStashDialog() {
                 },
                 [this](const QString &e) {
                     setBusy(false);
-                    showStatus(e, true);
+                    showOpError("Stash", e);
                 });
         },
-        [this](const QString &e) { showStatus(e, true); });
+        [this](const QString &e) { showOpError("Stash", e); });
 }
 
 void MainWindow::openBranchDialog() {
@@ -645,7 +645,7 @@ void MainWindow::openBranchDialog() {
         },
         [this](const QString &e) {
             setBusy(false);
-            showStatus(e, true);
+            showOpError("Create Branch", e);
         });
 }
 
@@ -681,7 +681,7 @@ void MainWindow::openCloneDialog() {
                 progress->deleteLater();
             }
             setBusy(false);
-            showOpError(e);
+            showOpError("Clone", e);
         });
 }
 
@@ -752,17 +752,18 @@ void MainWindow::showAbout() {
 }
 
 void MainWindow::showStatus(const QString &message, bool error) {
-    statusBar()->showMessage(message, error ? 8000 : 4000);
+    statusBar()->showMessage(ErrorDialog::statusText(message), error ? 8000 : 4000);
     if (error)
-        QMessageBox::warning(this, "Versionary", message);
+        ErrorDialog::showWarning(this, "Versionary", message);
 }
 
-void MainWindow::showOpError(const QString &e) {
+void MainWindow::showOpError(const QString &title, const QString &e) {
     if (e == "Cancelled") {
         statusBar()->showMessage("Cancelled", 4000);
         return;
     }
-    showStatus(e, true);
+    statusBar()->showMessage(ErrorDialog::statusText(e), 8000);
+    ErrorDialog::showWarning(this, title, e);
 }
 
 void MainWindow::setBusy(bool busy) {

@@ -32,6 +32,16 @@
 #include <QDateTime>
 #include <algorithm>
 
+namespace {
+// Cherry-pick/rebase failures only need the resolve-conflicts hint when the
+// error itself doesn't already carry it (conflict errors do).
+QString withConflictHint(const QString &e) {
+    if (e.contains("conflict", Qt::CaseInsensitive))
+        return e;
+    return e + "\nResolve conflicts in Changes, then Continue.";
+}
+} // namespace
+
 HistoryWidget::HistoryWidget(GitService *git, RepoManager *repos, QWidget *parent)
     : QWidget(parent), m_git(git), m_repos(repos) {
     // Plain QWidgets only paint stylesheet backgrounds/borders with this.
@@ -329,7 +339,7 @@ void HistoryWidget::cherryPickSelected() {
         },
         [this](const QString &e) {
             emit busyChanged(false);
-            emit statusMessage(e + "\nResolve conflicts in Changes, then Continue.", true);
+            emit statusMessage(withConflictHint(e), true);
             refresh();
             emit branchesChanged();
         });
@@ -380,7 +390,7 @@ void HistoryWidget::rebaseOntoSelected() {
         },
         [this](const QString &e) {
             emit busyChanged(false);
-            emit statusMessage(e + "\nResolve conflicts in Changes, then Continue.", true);
+            emit statusMessage(withConflictHint(e), true);
             refresh();
             emit branchesChanged();
         });

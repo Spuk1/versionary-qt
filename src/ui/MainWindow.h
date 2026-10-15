@@ -74,7 +74,7 @@ private slots:
     void openSettings();
     void openSupportLink();
     void showStatus(const QString &message, bool error);
-    void showOpError(const QString &e);
+    void showOpError(const QString &title, const QString &message);
     void setBusy(bool busy);
     void watchBusyTimeout();
     void refreshAfterBranchChange();

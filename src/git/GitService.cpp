@@ -6,6 +6,7 @@
 #include "core/AppConfig.h"
 #include "core/AuthStore.h"
 #include "core/SshStore.h"
+#include "git/GitError.h"
 #include "net/ApiClient.h"
 
 #include <QDesktopServices>
@@ -43,15 +44,17 @@ QString GitService::toplevelOf(const QString &path) {
     return r.stdoutText.trimmed();
 }
 
-QString GitService::formatGitError(const GitResult &result) {    QStringList parts;
+QString GitService::formatGitError(const GitResult &result) {
+    if (result.cancelled)
+        return QStringLiteral("Cancelled");
     if (result.timedOut)
-        parts << "git timed out";
-    if (!result.stderrText.trimmed().isEmpty())
-        parts << "stderr: " + result.stderrText.trimmed();
-    if (!result.stdoutText.trimmed().isEmpty())
-        parts << "stdout: " + result.stdoutText.trimmed();
-    parts << QString("exitCode=%1").arg(result.exitCode);
-    return parts.join('\n');
+        return GitError::friendlyMessage(QStringLiteral("git timed out"));
+    const QString raw = result.stderrText + "\n" + result.stdoutText;
+    if (raw.trimmed().isEmpty())
+        return QString("The operation failed without details (exit code %1). "
+                       "Please try again.")
+            .arg(result.exitCode);
+    return GitError::friendlyMessage(raw);
 }
 
 bool GitService::hasUncommittedChanges(const QString &path) {
@@ -151,24 +154,28 @@ bool isOAuthAuthFailure(const QString &msg) {
         || l.contains("bad credentials") || l.contains("401") || l.contains("403");
 }
 
-GitException transportError(const QString &action, const QString &msg,
+GitException transportError(const QString &action, const QString &rawOutput,
                             AuthPlanner::Mode mode) {
     const QString verb = action.left(1).toUpper() + action.mid(1);
-    const QString l = msg.toLower();
-    if (mode == AuthPlanner::Mode::Ssh && isSshAuthFailure(msg)) {
-        if (l.contains("no such identity") || l.contains("load pubkey"))
-            return GitException(verb + " failed: SSH key could not be loaded for this remote.\n"
-                                "Check the configured SSH key path and permissions in Settings.\n" + msg);
-        return GitException(verb + " failed: SSH authentication failed (key rejected or not allowed for this repository).\n"
-                            "Use a valid SSH key for this host, or connect an OAuth account for HTTPS access.\n" + msg);
-    }
-    if (mode == AuthPlanner::Mode::OAuth && isOAuthAuthFailure(msg))
-        return GitException(verb + " failed: OAuth credentials are invalid/expired, or this account has no access to the repository.\n"
-                            "Reconnect the account in Settings and verify repository permissions.\n" + msg);
+    // Match on sanitized output: credentials must never leak into messages.
+    const QString clean = GitError::sanitizeOutput(rawOutput);
+    const QString l = clean.toLower();
+    // "Not found" beats auth failure: a wrong URL looks like rejected access.
     if (l.contains("repository not found") || l.contains("not found"))
-        return GitException(verb + " failed: Repository was not found on the remote.\n"
-                            "Verify the remote URL and that your account can access this repository.\n" + msg);
-    return GitException(verb + " failed:\n" + msg);
+        return GitException(verb + " failed: the repository was not found on the remote.\n"
+                            "Verify the remote URL and that your account can access this repository.");
+    if (mode == AuthPlanner::Mode::Ssh && isSshAuthFailure(clean)) {
+        const QString lower = clean.toLower();
+        if (lower.contains("no such identity") || lower.contains("load pubkey"))
+            return GitException(verb + " failed: the SSH key could not be loaded for this remote.\n"
+                                "Check the configured SSH key path and permissions in Settings.");
+        return GitException(verb + " failed: SSH authentication failed (the key was rejected or is not allowed for this repository).\n"
+                            "Use a valid SSH key for this host, or connect an OAuth account for HTTPS access.");
+    }
+    if (mode == AuthPlanner::Mode::OAuth && isOAuthAuthFailure(clean))
+        return GitException(verb + " failed: the connected account was rejected (invalid or expired credentials, or no access to this repository).\n"
+                            "Reconnect the account in Settings and verify repository permissions.");
+    return GitException(verb + " failed:\n" + GitError::friendlyMessage(clean));
 }
 
 void deleteRemoteRef(GitRunner &git, const QString &repo, const QStringList &rewrite,
@@ -411,7 +418,8 @@ void GitService::stageLines(const QString &file, const QSet<int> &selected,
     Q_UNUSED(file);
     const QString patch = DiffPatch::buildSelectedPatch(diffText, selected);
     if (patch.isEmpty())
-        throw GitException("Nothing selected.");
+        throw GitException("Nothing to apply from the current selection. "
+                           "Select +/- lines in the diff first.");
     runWithInput({"apply", "--cached", "--unidiff-zero", "--whitespace=nowarn"},
                  patch.toUtf8());
 }
@@ -421,7 +429,8 @@ void GitService::discardLines(const QString &file, const QSet<int> &selected,
     Q_UNUSED(file);
     const QString patch = DiffPatch::buildSelectedPatch(diffText, selected);
     if (patch.isEmpty())
-        throw GitException("Nothing selected.");
+        throw GitException("Nothing to apply from the current selection. "
+                           "Select +/- lines in the diff first.");
     runWithInput({"apply", "-R", "--unidiff-zero", "--whitespace=nowarn"}, patch.toUtf8());
 }
 
@@ -430,7 +439,8 @@ void GitService::unstageLines(const QString &file, const QSet<int> &selected,
     Q_UNUSED(file);
     const QString patch = DiffPatch::buildSelectedPatch(diffText, selected);
     if (patch.isEmpty())
-        throw GitException("Nothing selected.");
+        throw GitException("Nothing to apply from the current selection. "
+                           "Select +/- lines in the diff first.");
     runWithInput({"apply", "--cached", "-R", "--unidiff-zero", "--whitespace=nowarn"},
                  patch.toUtf8());
 }
@@ -465,7 +475,7 @@ void GitService::dropStash(const QString &ref) {
 void GitService::applyStashFile(const QString &ref, const QString &file) {
     const QString target = file.trimmed();
     if (target.isEmpty())
-        throw GitException("Invalid filepath");
+        throw GitException("No file was given to restore from the stash.");
     runOrThrow({"checkout", QString("stash@{%1}").arg(StashUtils::toRefIdx(ref)), "--", target});
 }
 
@@ -510,27 +520,26 @@ GitResult GitService::runNetworkAction(const QString &action, const QStringList 
             throw GitException("Cancelled");
         return r;
     };
-    try {
-        const GitResult r = attempt(plan);
-        if (!r.ok())
-            throw transportError(action, formatGitError(r), plan.mode);
+    // SSH failure with a usable OAuth account falls back to HTTPS instead of
+    // failing outright. This checks the raw output (not the friendly error
+    // text, which no longer carries git's keywords).
+    auto shouldTryOAuthFallback = [&](const TransportPlan &p, const GitResult &r) {
+        return p.mode == AuthPlanner::Mode::Ssh
+            && isSshAuthFailure(GitError::sanitizeOutput(r.stderrText + "\n" + r.stdoutText));
+    };
+    GitResult r = attempt(plan);
+    if (r.ok())
         return r;
-    } catch (const GitException &e) {
-        const QString msg = e.qmessage();
-        if (msg == "Cancelled")
-            throw;
-        if (plan.mode == AuthPlanner::Mode::Ssh && isSshAuthFailure(msg)) {
-            const TransportPlan oauth = resolvePlan(true);
-            if (oauth.mode == AuthPlanner::Mode::OAuth) {
-                plan = oauth;
-                const GitResult r = attempt(plan);
-                if (!r.ok())
-                    throw transportError(action, formatGitError(r), plan.mode);
+    if (shouldTryOAuthFallback(plan, r)) {
+        const TransportPlan oauth = resolvePlan(true);
+        if (oauth.mode == AuthPlanner::Mode::OAuth) {
+            plan = oauth;
+            r = attempt(plan);
+            if (r.ok())
                 return r;
-            }
         }
-        throw;
     }
+    throw transportError(action, r.stderrText + "\n" + r.stdoutText, plan.mode);
 }
 
 void GitService::fetch(ProgressCallback progress, std::shared_ptr<std::atomic_bool> cancel) {
@@ -670,9 +679,9 @@ QString GitService::cloneRepo(const QString &url, const QString &destBase,
         r = git.run(cloneArgs, base, env);
     }
     if (!r.ok()) {
-        QString msg = r.stderrText + "\n" + r.stdoutText;
-        msg.replace(QRegularExpression("(https?://)[^@\\s/]+@", QRegularExpression::CaseInsensitiveOption), "\\1***@");
-        throw GitException(msg.trimmed());
+        if (r.cancelled)
+            throw GitException("Cancelled");
+        throw GitException(GitError::friendlyMessage(r.stderrText + "\n" + r.stdoutText));
     }
     const QString cleaned = RemoteUtils::stripHttpCredentials(cloneUrl);
     if (cleaned != cloneUrl)

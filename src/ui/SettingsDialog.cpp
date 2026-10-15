@@ -5,6 +5,7 @@
 #include "core/SshStore.h"
 #include "net/ApiClient.h"
 #include "net/OAuthClient.h"
+#include "ui/ErrorDialog.h"
 #include "ui/ThemeManager.h"
 
 #include <QApplication>
@@ -17,7 +18,6 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
-#include <QMessageBox>
 #include <QPushButton>
 #include <QTabWidget>
 #include <QTimer>
@@ -180,7 +180,8 @@ void SettingsDialog::connectProvider(const QString &provider) {
             m_auth->saveOAuth("gitlab.com", "gitlab", "git", t.accessToken);
         }
     } catch (const std::exception &e) {
-        QMessageBox::warning(this, "Connect failed", e.what());
+        ErrorDialog::showWarning(this, "Connect failed",
+                                 QString::fromStdString(e.what()).trimmed());
     }
     row.action->setEnabled(true);
     refreshStatuses();
@@ -275,14 +276,15 @@ void SettingsDialog::browseSshKey(bool repoScope) {
 
 void SettingsDialog::saveSshKey(bool repoScope, const QString &path) {
     if (!path.trimmed().isEmpty() && !QFile::exists(path.trimmed())) {
-        QMessageBox::warning(this, "SSH", "SSH key file not found.");
+        ErrorDialog::showWarning(this, "SSH",
+                                 "That SSH key file was not found. Choose an existing key file.");
         return;
     }
     if (!repoScope) {
         m_ssh->setGlobalKeyPath(path.trimmed());
     } else {
         if (m_repoPath.isEmpty()) {
-            QMessageBox::warning(this, "SSH", "Open a repository first.");
+            ErrorDialog::showWarning(this, "SSH", "Open a repository first.");
             return;
         }
         m_ssh->setRepoKeyPath(m_repoPath, path.trimmed());

@@ -43,6 +43,8 @@ add_library(versionary_core STATIC
     src/core/IdentityStore.h
     src/git/RemoteUtils.cpp
     src/git/RemoteUtils.h
+    src/git/GitError.cpp
+    src/git/GitError.h
     src/git/StashUtils.cpp
     src/git/StashUtils.h
     src/git/DiffPatch.cpp
