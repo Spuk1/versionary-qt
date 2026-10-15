@@ -91,7 +91,7 @@ void GitService::undoLastCommit() {
 void GitService::cherryPick(const QString &oid) {
     const QString rev = oid.trimmed();
     if (rev.isEmpty())
-        throw GitException("Invalid commit id");
+        throw GitException("That commit could not be found. Refresh and try again.");
     const GitResult r = m_git.run({"cherry-pick", rev}, m_repo);
     if (!r.ok())
         throw GitException(formatGitError(r));
@@ -108,7 +108,7 @@ void GitService::cherryPickContinue() {
 void GitService::revertCommit(const QString &oid) {
     const QString rev = oid.trimmed();
     if (rev.isEmpty())
-        throw GitException("Invalid commit id");
+        throw GitException("That commit could not be found. Refresh and try again.");
     const GitResult r = m_git.run({"revert", "--no-edit", rev}, m_repo);
     if (!r.ok())
         throw GitException(formatGitError(r));
@@ -117,7 +117,7 @@ void GitService::revertCommit(const QString &oid) {
 void GitService::rebaseOnto(const QString &upstream) {
     const QString rev = upstream.trimmed();
     if (rev.isEmpty())
-        throw GitException("Invalid upstream");
+        throw GitException("That commit could not be found. Refresh and try again.");
     const GitResult r = m_git.run({"rebase", rev}, m_repo);
     if (!r.ok())
         throw GitException(formatGitError(r));
@@ -151,7 +151,7 @@ QList<CommitInfo> GitService::fileLog(const QString &path, int limit) {
     requireRepo();
     const QString fp = normalizeRelPath(path);
     if (fp.isEmpty())
-        throw GitException("Invalid filepath");
+        throw GitException("Could not load the history for this file.");
     const int bounded = qBound(1, limit, 500);
     const GitResult r = m_git.run(
         {"log", "--follow", "--decorate=short",
@@ -212,7 +212,7 @@ QList<BlameLine> GitService::blame(const QString &path, const QString &rev) {
     requireRepo();
     const QString fp = normalizeRelPath(path);
     if (fp.isEmpty())
-        throw GitException("Invalid filepath");
+        throw GitException("Could not load blame for this file.");
     const GitResult r =
         m_git.run({"blame", "--porcelain", rev.isEmpty() ? "HEAD" : rev, "--", fp}, m_repo);
     if (!r.ok())

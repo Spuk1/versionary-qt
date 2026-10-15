@@ -43,6 +43,8 @@ add_library(versionary_core STATIC
     src/core/IdentityStore.h
     src/git/RemoteUtils.cpp
     src/git/RemoteUtils.h
+    src/git/GitError.cpp
+    src/git/GitError.h
     src/git/StashUtils.cpp
     src/git/StashUtils.h
     src/git/DiffPatch.cpp
@@ -125,6 +127,25 @@ target_link_libraries(versionary_core PUBLIC
 target_include_directories(versionary_core PUBLIC src)
 
 qt_add_executable(Versionary src/main.cpp)
+# macOS bundle metadata: qt_add_executable already builds an .app, but the
+# identifier/version/icon must be explicit so `cmake --install` + macdeployqt
+# produce a valid signed bundle instead of a hand-rolled one (see release.yml).
+set_target_properties(Versionary PROPERTIES
+    MACOSX_BUNDLE TRUE
+    MACOSX_BUNDLE_GUI_IDENTIFIER "io.github.spuk1.Versionary"
+    MACOSX_BUNDLE_BUNDLE_NAME "Versionary"
+    MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}"
+    MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
+)
+# Optional macOS icon: release workflow generates packaging/mac/icon.icns
+# from the hicolor PNGs; use it when present, otherwise build without one.
+if(APPLE AND EXISTS "${CMAKE_SOURCE_DIR}/packaging/mac/icon.icns")
+    set_source_files_properties(packaging/mac/icon.icns PROPERTIES
+        MACOSX_PACKAGE_LOCATION Resources)
+    target_sources(Versionary PRIVATE packaging/mac/icon.icns)
+    set_target_properties(Versionary PROPERTIES
+        MACOSX_BUNDLE_ICON_FILE "icon.icns")
+endif()
 target_link_libraries(Versionary PRIVATE versionary_core)
 
 enable_testing()
@@ -133,6 +154,7 @@ add_subdirectory(tests)
 include(GNUInstallDirs)
 
 install(TARGETS Versionary
+    BUNDLE DESTINATION .
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(FILES packaging/io.github.spuk1.Versionary.desktop
     DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)

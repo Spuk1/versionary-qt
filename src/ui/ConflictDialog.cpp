@@ -1,11 +1,11 @@
 #include "ConflictDialog.h"
 #include "git/GitService.h"
+#include "ui/ErrorDialog.h"
 
 #include <QDialogButtonBox>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QListWidget>
-#include <QMessageBox>
 #include <QPushButton>
 #include <QVBoxLayout>
 
@@ -50,7 +50,9 @@ void ConflictDialog::refreshList() {
     try {
         remaining = m_git->conflictedFiles();
     } catch (const std::exception &e) {
-        QMessageBox::warning(this, "Resolve Conflicts", e.what());
+        ErrorDialog::showWarning(
+            this, "Resolve Conflicts",
+            QString::fromStdString(e.what()).trimmed());
         return;
     }
     m_list->clear();
@@ -75,7 +77,9 @@ void ConflictDialog::runOp(const QString &file, bool ours) {
         else
             m_git->checkoutTheirs(file);
     } catch (const std::exception &e) {
-        QMessageBox::warning(this, "Resolve Conflicts", e.what());
+        ErrorDialog::showWarning(
+            this, "Resolve Conflicts",
+            QString::fromStdString(e.what()).trimmed());
         return;
     }
     refreshList();

@@ -135,6 +135,71 @@ private slots:
         QVERIFY2(shown, "staging missed the external edit after fetch");
     }
 
+    void windowActivationRefreshesStaging() {
+        QTimer killer;
+        killer.setInterval(100);
+        connect(&killer, &QTimer::timeout, [] {
+            if (QWidget *modal = QApplication::activeModalWidget())
+                modal->close();
+        });
+        killer.start();
+
+        MainWindow w;
+        w.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&w, 15000));
+        QTRY_VERIFY_WITH_TIMEOUT(!w.isBusy(), 15000);
+        auto *staging = w.findChild<StagingWidget *>();
+        QVERIFY(staging != nullptr);
+        auto stagedFile = [&](const QString &file) {
+            for (QListWidget *list : staging->findChildren<QListWidget *>()) {
+                for (int i = 0; i < list->count(); ++i) {
+                    if (list->item(i)->data(Qt::UserRole).toString() == file)
+                        return true;
+                }
+            }
+            return false;
+        };
+        auto activate = [&](Qt::ApplicationState state) {
+            return QMetaObject::invokeMethod(&w, "onApplicationStateChanged",
+                                             Q_ARG(Qt::ApplicationState, state));
+        };
+        // Inactive state must not touch anything.
+        QVERIFY(activate(Qt::ApplicationInactive));
+        for (int i = 0; i < 20; ++i) {
+            QTest::qWait(25);
+            QVERIFY(!w.isBusy());
+        }
+        // Active state refreshes local panels: the workdir edit below shows
+        // up without any manual fetch. (Dedicated names: earlier methods
+        // dirty a.txt in this shared fixture.)
+        QVERIFY(!stagedFile("act1.txt")); // absent: guards a vacuous pass
+        QFile f(m_work + "/act1.txt");
+        QVERIFY(f.open(QIODevice::WriteOnly | QIODevice::Text));
+        f.write("external edit\n");
+        f.close();
+        QVERIFY(activate(Qt::ApplicationActive));
+        bool shown = false;
+        for (int i = 0; i < 300 && !shown; ++i) {
+            QTest::qWait(50);
+            shown = stagedFile("act1.txt");
+        }
+        QVERIFY2(shown, "staging missed the external edit after activation");
+        QTRY_VERIFY_WITH_TIMEOUT(!w.isBusy(), 15000);
+        // Second activation inside the fetch throttle: no network fetch,
+        // but local panels still refresh.
+        QFile g(m_work + "/act2.txt");
+        QVERIFY(g.open(QIODevice::WriteOnly | QIODevice::Text));
+        g.write("brand new\n");
+        g.close();
+        QVERIFY(activate(Qt::ApplicationActive));
+        shown = false;
+        for (int i = 0; i < 300 && !shown; ++i) {
+            QTest::qWait(50);
+            shown = stagedFile("act2.txt");
+        }
+        QVERIFY2(shown, "staging missed the new file inside the throttle");
+    }
+
     void supportLinkIsWired() {        // Same Ko-fi page as the badge in the old client. Actions are only
         // checked for existence: triggering them would open a browser.
         QCOMPARE(MainWindow::supportUrl(), QString("https://ko-fi.com/L3L71NX36P"));

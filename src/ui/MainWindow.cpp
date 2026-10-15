@@ -3,6 +3,7 @@
 #include "AsyncHelper.h"
 #include "BranchDialog.h"
 #include "CloneDialog.h"
+#include "ErrorDialog.h"
 #include "HistoryWidget.h"
 #include "OnboardingDialog.h"
 #include "OperationProgressDialog.h"
@@ -33,7 +34,6 @@
 #include <QPointer>
 #include <QThreadPool>
 #include <QInputDialog>
-#include <QMessageBox>
 #include <QLabel>
 #include <QPushButton>
 #include <QSettings>
@@ -367,7 +367,6 @@ void MainWindow::openQuickOpen() {
 void MainWindow::doFetch() {
     if (!ensureRepoSelected() || m_header->isBusy())
         return;
-    m_headerAction = "fetching";
     setBusy(true);
     // No progress popup: the header spinner carries the fetch state.
     // (A dialog here would pop up on every throttled focus fetch.)
@@ -376,6 +375,7 @@ void MainWindow::doFetch() {
         [this] {
             setBusy(false);
             m_lastFetch = QDateTime::currentDateTime();
+            m_autoFetchFailures = 0;
             if (m_fetchLabel)
                 m_fetchLabel->setText(formatFetchTime(m_lastFetch));
             refreshHead();
@@ -384,8 +384,10 @@ void MainWindow::doFetch() {
         },
         [this](const QString &e) {
             setBusy(false);
+            m_lastFetchFailure = QDateTime::currentMSecsSinceEpoch();
+            ++m_autoFetchFailures;
             // Status bar only: background fetches must never raise a modal.
-            statusBar()->showMessage(e, 8000);
+            statusBar()->showMessage(ErrorDialog::statusText(e), 8000);
         });
 }
 
@@ -412,7 +414,6 @@ void MainWindow::doFetchAll() {
     }
     if (m_header->isBusy())
         return;
-    m_headerAction = "fetching";
     setBusy(true);
     QPointer<OperationProgressDialog> progress =
         new OperationProgressDialog("Fetching all repositories", this);
@@ -483,14 +484,13 @@ void MainWindow::doFetchAll() {
                 progress->deleteLater();
             }
             setBusy(false);
-            showOpError(e);
+            showOpError("Fetch All", e);
         });
 }
 
 void MainWindow::doPull() {
     if (!ensureRepoSelected())
         return;
-    m_headerAction = "pulling";
     setBusy(true);
     QPointer<OperationProgressDialog> progress = new OperationProgressDialog("Pulling", this);
     auto progCb = GitService::ProgressCallback(
@@ -512,7 +512,7 @@ void MainWindow::doPull() {
                 progress->deleteLater();
             }
             setBusy(false);
-            showOpError(e);
+            showOpError("Pull", e);
         });
 }
 
@@ -538,11 +538,10 @@ void MainWindow::doPush() {
             }
             pushPlain();
         },
-        [this](const QString &e) { showStatus(e, true); });
+        [this](const QString &e) { showOpError("Push", e); });
 }
 
 void MainWindow::pushPlain() {
-    m_headerAction = "pushing";
     setBusy(true);
     QPointer<OperationProgressDialog> progress = new OperationProgressDialog("Pushing", this);
     auto progCb = GitService::ProgressCallback(
@@ -564,12 +563,11 @@ void MainWindow::pushPlain() {
                 progress->deleteLater();
             }
             setBusy(false);
-            showOpError(e);
+            showOpError("Push", e);
         });
 }
 
 void MainWindow::pushWithUpstream() {
-    m_headerAction = "pushing";
     setBusy(true);
     QPointer<OperationProgressDialog> progress = new OperationProgressDialog("Pushing", this);
     auto progCb = GitService::ProgressCallback(
@@ -591,7 +589,7 @@ void MainWindow::pushWithUpstream() {
                 progress->deleteLater();
             }
             setBusy(false);
-            showOpError(e);
+            showOpError("Push", e);
         });
 }
 
@@ -618,10 +616,10 @@ void MainWindow::openStashDialog() {
                 },
                 [this](const QString &e) {
                     setBusy(false);
-                    showStatus(e, true);
+                    showOpError("Stash", e);
                 });
         },
-        [this](const QString &e) { showStatus(e, true); });
+        [this](const QString &e) { showOpError("Stash", e); });
 }
 
 void MainWindow::openBranchDialog() {
@@ -645,7 +643,7 @@ void MainWindow::openBranchDialog() {
         },
         [this](const QString &e) {
             setBusy(false);
-            showStatus(e, true);
+            showOpError("Create Branch", e);
         });
 }
 
@@ -657,7 +655,6 @@ void MainWindow::openCloneDialog() {
     const QString dest = dlg.destination();
     const QString account = dlg.accountKey();
     const int workspace = dlg.workspace();
-    m_headerAction = "cloning";
     setBusy(true);
     QPointer<OperationProgressDialog> progress = new OperationProgressDialog("Cloning", this);
     auto progCb = GitService::ProgressCallback(
@@ -681,7 +678,7 @@ void MainWindow::openCloneDialog() {
                 progress->deleteLater();
             }
             setBusy(false);
-            showOpError(e);
+            showOpError("Clone", e);
         });
 }
 
@@ -752,17 +749,26 @@ void MainWindow::showAbout() {
 }
 
 void MainWindow::showStatus(const QString &message, bool error) {
-    statusBar()->showMessage(message, error ? 8000 : 4000);
-    if (error)
-        QMessageBox::warning(this, "Versionary", message);
+    // Status-bar only by design: background refreshes (head, tree, staging,
+    // history) all funnel through here, so popping a modal here turns any
+    // persistent failure (e.g. missing git on a packaged build) into a
+    // self-perpetuating dialog storm — dismissing the dialog re-activates
+    // the window, which triggers onApplicationStateChanged, which refreshes
+    // and fails again. Explicit user actions use showOpError for modals.
+    statusBar()->showMessage(ErrorDialog::statusText(message), error ? 8000 : 4000);
 }
 
-void MainWindow::showOpError(const QString &e) {
+void MainWindow::showOpError(const QString &title, const QString &e) {
     if (e == "Cancelled") {
         statusBar()->showMessage("Cancelled", 4000);
         return;
     }
-    showStatus(e, true);
+    statusBar()->showMessage(ErrorDialog::statusText(e), 8000);
+    // Collapse storms: if a modal is already up (e.g. cascade of background
+    // failures), don't stack another one on top.
+    if (QApplication::activeModalWidget())
+        return;
+    ErrorDialog::showWarning(this, title, e);
 }
 
 void MainWindow::setBusy(bool busy) {
@@ -770,12 +776,11 @@ void MainWindow::setBusy(bool busy) {
     if (m_busyCount < 0)
         m_busyCount = 0;
     if (m_busyCount == 0) {
-        m_headerAction.clear();
         m_busySince = 0;
     } else if (m_busySince == 0) {
         m_busySince = QDateTime::currentMSecsSinceEpoch();
     }
-    m_header->setBusy(m_busyCount > 0, m_headerAction);
+    m_header->setBusy(m_busyCount > 0);
 }
 
 // Watchdog: if busy state sticks far beyond any legitimate operation,
@@ -786,7 +791,6 @@ void MainWindow::watchBusyTimeout() {
         && QDateTime::currentMSecsSinceEpoch() - m_busySince > 10 * 60 * 1000) {
         m_busyCount = 0;
         m_busySince = 0;
-        m_headerAction.clear();
         m_header->setBusy(false);
         statusBar()->showMessage("A stuck operation was cleared.", 8000);
     }
@@ -804,6 +808,12 @@ void MainWindow::onApplicationStateChanged(Qt::ApplicationState state) {
     // intra-app widget switch and spam refreshes while interacting.
     if (state != Qt::ApplicationActive)
         return;
+    // Dismissing a modal re-activates the window: refreshing here would
+    // re-run failing git work and immediately raise the next dialog,
+    // i.e. an "infinite exception" loop on packaged builds where git or
+    // auth is deterministically broken. Stay out while modal/busy.
+    if (QApplication::activeModalWidget())
+        return;
     if (m_repos->selectedPath().isEmpty() || m_header->isBusy())
         return;
     // Local changes always refresh on refocus; the network fetch below
@@ -813,6 +823,11 @@ void MainWindow::onApplicationStateChanged(Qt::ApplicationState state) {
     m_staging->refresh();
     const qint64 now = QDateTime::currentMSecsSinceEpoch();
     if (now - m_lastFocusFetch < 60000)
+        return;
+    // Back off network fetches while they keep failing (broken auth,
+    // offline, missing git): local refresh above still runs, but we stop
+    // hammering the remote once per focus event.
+    if (m_autoFetchFailures >= 3 && now - m_lastFetchFailure < 5 * 60 * 1000)
         return;
     m_lastFocusFetch = now;
     doFetch();

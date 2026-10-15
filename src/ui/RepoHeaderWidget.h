@@ -13,7 +13,7 @@ class RepoHeaderWidget : public QWidget {
 public:
     explicit RepoHeaderWidget(RepoManager *repos, QWidget *parent = nullptr);
 
-    void setBusy(bool busy, const QString &action = {});
+    void setBusy(bool busy);
     bool isBusy() const { return m_busy; }
 
 private slots:
@@ -23,8 +23,6 @@ private:
     RepoManager *m_repos;
     QLabel *m_nameLabel;
     QLabel *m_branchLabel;
-    QLabel *m_spinner;
     LoadingBarWidget *m_loadingBar = nullptr;
     bool m_busy = false;
-    QString m_action;
 };

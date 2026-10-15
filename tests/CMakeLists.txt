@@ -37,7 +37,7 @@ add_versionary_test(test_dialogs)
 add_versionary_test(test_progressparse)
 add_versionary_test(test_appconfig)
 add_versionary_test(test_diffhighlight)
-add_versionary_test(test_shot)
+add_versionary_test(test_giterror)
 
 if(WIN32)
   # test_layout's splitter geometry assertions fail on Windows CI (see

@@ -24,10 +24,7 @@ RepoHeaderWidget::RepoHeaderWidget(RepoManager *repos, QWidget *parent)
     m_branchLabel = new QLabel(branchRow);
     m_branchLabel->setProperty("class", "branch");
     m_branchLabel->setAlignment(Qt::AlignHCenter);
-    m_spinner = new QLabel("…", branchRow);
-    m_spinner->setVisible(false);
     branchLayout->addWidget(m_branchLabel);
-    branchLayout->addWidget(m_spinner);
     layout->addWidget(m_nameLabel);
     layout->addWidget(branchRow);
     m_loadingBar = new LoadingBarWidget(this);
@@ -38,9 +35,8 @@ RepoHeaderWidget::RepoHeaderWidget(RepoManager *repos, QWidget *parent)
     refresh();
 }
 
-void RepoHeaderWidget::setBusy(bool busy, const QString &action) {
+void RepoHeaderWidget::setBusy(bool busy) {
     m_busy = busy;
-    m_action = action;
     m_loadingBar->setActive(busy);
     refresh();
 }
@@ -54,6 +50,7 @@ void RepoHeaderWidget::refresh() {
         b.remove("/branches/");
         branch = b.isEmpty() ? "HEAD" : b;
     }
-    m_branchLabel->setText(QString("⑂ %1").arg(m_busy && !m_action.isEmpty() ? m_action : branch));
-    m_spinner->setVisible(m_busy);
+    // Always the branch: swapping in action text resized the centered row
+    // on every busy blip (visible jiggle). Busy shows via the loading bar.
+    m_branchLabel->setText(QString("⑂ %1").arg(branch));
 }

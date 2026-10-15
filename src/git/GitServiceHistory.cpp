@@ -4,6 +4,8 @@
 #include <QFile>
 #include <QRegularExpression>
 
+#include "git/GitError.h"
+
 namespace {
 // Resolves a ref to a commit OID (avoids ambiguity with same-named files).
 QString resolveRef(GitRunner &git, const QString &repo, const QString &ref) {
@@ -66,7 +68,7 @@ CommitDetails GitService::commitDetails(const QString &oid) {
     requireRepo();
     const QString rev = oid.trimmed();
     if (rev.isEmpty())
-        throw GitException("Invalid commit id");
+        throw GitException("That commit could not be found. Refresh and try again.");
     const GitResult head =
         m_git.run({"show", "--no-color", "--decorate=short",
                    "--pretty=format:%H%x1f%P%x1f%an%x1f%ae%x1f%at%x1f%B%x1f%D", "-s", rev},
@@ -107,7 +109,7 @@ QString GitService::commitFileDiff(const QString &oid, const QString &filepath, 
     const QString rev = oid.trimmed();
     const QString fp = normalizeRelPath(filepath);
     if (rev.isEmpty() || fp.isEmpty())
-        throw GitException("Invalid arguments");
+        throw GitException("Could not load the diff for this file.");
     QStringList args = {"show", "--no-color", "-U" + QString::number(context)};
     if (ignoreWhitespace)
         args << "-w";
@@ -129,7 +131,7 @@ QString GitService::compareBranches(const QString &base, const QString &head,
     const QString b = base.trimmed();
     const QString h = head.trimmed();
     if (b.isEmpty() || h.isEmpty())
-        throw GitException("Invalid branches");
+        throw GitException("Two branches are needed to compare.");
     // `git diff` exits 1 when differences exist: only real failures throw.
     auto runDiff = [this](const QStringList &args) {
         const GitResult r = m_git.run(args, m_repo);
@@ -170,9 +172,7 @@ QString buildNewFilePatch(const QString &relPath, const QString &content) {
 QString runDiffLenient(GitRunner &git, const QString &repo, const QStringList &args) {
     const GitResult r = git.run(QStringList({"diff"}) << args, repo);
     if (r.exitCode != 0 && r.exitCode != 1)
-        throw GitException(r.stderrText.trimmed().isEmpty()
-                               ? "git diff failed"
-                               : r.stderrText.trimmed());
+        throw GitException(GitError::friendlyMessage(r.stderrText + "\n" + r.stdoutText));
     return r.stdoutText;
 }
 } // namespace
@@ -183,7 +183,7 @@ FileDiff GitService::fileDiff(const QString &filepath, const QString &base,
     FileDiff d;
     const QString fp = normalizeRelPath(filepath);
     if (fp.isEmpty() || fp.startsWith(".git/")) {
-        d.error = "Invalid filepath";
+        d.error = "Could not load the diff for this file.";
         return d;
     }
     d.filepath = fp;
@@ -198,7 +198,7 @@ FileDiff GitService::fileDiff(const QString &filepath, const QString &base,
             if (d.patch.trimmed().isEmpty()) {
                 QFile f(QDir(m_repo).absoluteFilePath(fp));
                 if (!f.open(QIODevice::ReadOnly | QIODevice::Text)) {
-                    d.error = "Cannot read untracked file";
+                    d.error = "Could not read '" + fp + "' from disk.";
                     return d;
                 }
                 d.patch = buildNewFilePatch(fp, QString::fromUtf8(f.readAll()));

@@ -14,7 +14,8 @@ constexpr double kBeamWidth = 0.4;
 
 LoadingBarWidget::LoadingBarWidget(QWidget *parent) : QWidget(parent) {
     setFixedHeight(kBarHeight);
-    setVisible(false);
+    // Always laid out (never hidden): toggling visibility would bounce
+    // the whole layout on every busy blip. Inactive paints nothing.
     m_timer = new QTimer(this);
     m_timer->setInterval(kFrameMs);
     connect(m_timer, &QTimer::timeout, this, &LoadingBarWidget::advance);
@@ -24,12 +25,12 @@ void LoadingBarWidget::setActive(bool active) {
     if (active == m_active)
         return;
     m_active = active;
-    setVisible(active);
     if (active) {
         m_phase = 0.0;
         m_timer->start();
     } else {
         m_timer->stop();
+        update();
     }
 }
 
@@ -41,6 +42,8 @@ void LoadingBarWidget::advance() {
 }
 
 void LoadingBarWidget::paintEvent(QPaintEvent *) {
+    if (!m_active)
+        return;
     QPainter p(this);
     // Track
     p.fillRect(rect(), QColor(10, 40, 70, 140));

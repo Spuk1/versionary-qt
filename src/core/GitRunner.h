@@ -36,6 +36,10 @@ public:
     static bool isIndexLockError(const QString &message);
     static QString resolveGitDir(const QString &cwd);
     static bool isGitInstalled();
+    // Absolute git executable. On Windows a packaged app launched from
+    // Explorer often lacks Git's bin dir on PATH, so probe well-known
+    // Git for Windows locations after QStandardPaths::findExecutable.
+    static QString gitProgram();
 
 private:
     static bool waitUntilUnlocked(const QString &gitDir, int timeoutMs, int pollMs);

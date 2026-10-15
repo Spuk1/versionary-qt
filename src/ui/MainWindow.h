@@ -74,7 +74,7 @@ private slots:
     void openSettings();
     void openSupportLink();
     void showStatus(const QString &message, bool error);
-    void showOpError(const QString &e);
+    void showOpError(const QString &title, const QString &message);
     void setBusy(bool busy);
     void watchBusyTimeout();
     void refreshAfterBranchChange();
@@ -114,5 +114,6 @@ protected:
     int m_busyCount = 0;
     qint64 m_lastFocusFetch = 0;
     qint64 m_busySince = 0;
-    QString m_headerAction;
+    qint64 m_lastFetchFailure = 0;
+    int m_autoFetchFailures = 0;
 };

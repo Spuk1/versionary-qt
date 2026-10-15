@@ -7,6 +7,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QProcess>
+#include <QStandardPaths>
 #include <QThread>
 
 namespace {
@@ -24,6 +25,35 @@ void forceNonInteractiveEnv(QProcessEnvironment &env) {
 } // namespace
 
 GitRunner::GitRunner(QObject *parent) : QObject(parent) {}
+
+QString GitRunner::gitProgram() {
+    static QString cached;
+    if (!cached.isEmpty())
+        return cached;
+    QString found = QStandardPaths::findExecutable("git");
+    if (!found.isEmpty()) {
+        cached = found;
+        return cached;
+    }
+#ifdef Q_OS_WIN
+    // Git for Windows default locations (Explorer-launched apps often miss
+    // cmd/bin on PATH). Prefer cmd/git.exe (wrapper) then bin/git.exe.
+    const QStringList candidates = {
+        "C:/Program Files/Git/cmd/git.exe",
+        "C:/Program Files (x86)/Git/cmd/git.exe",
+        "C:/Program Files/Git/bin/git.exe",
+        "C:/Program Files (x86)/Git/bin/git.exe",
+    };
+    for (const QString &c : candidates) {
+        if (QFile::exists(c)) {
+            cached = QDir::toNativeSeparators(c);
+            return cached;
+        }
+    }
+#endif
+    cached = "git"; // last resort: let QProcess report the spawn error
+    return cached;
+}
 
 bool GitRunner::isIndexLockError(const QString &message) {
     const QString s = message.toLower();
@@ -64,7 +94,9 @@ bool GitRunner::waitUntilUnlocked(const QString &gitDir, int timeoutMs, int poll
 
 bool GitRunner::isGitInstalled() {
     QProcess p;
-    p.start("git", {"--version"});
+    p.setProgram(gitProgram());
+    p.setArguments({"--version"});
+    p.start();
     return p.waitForFinished(10000) && p.exitCode() == 0;
 }
 
@@ -79,7 +111,7 @@ GitResult GitRunner::run(const QStringList &args, const QString &cwd,
 
     for (int attempt = 0; attempt <= kMaxRetries; ++attempt) {
         QProcess proc;
-        proc.setProgram("git");
+        proc.setProgram(gitProgram());
         proc.setArguments(args);
         proc.setWorkingDirectory(cwd);
         QProcessEnvironment merged = QProcessEnvironment::systemEnvironment();
@@ -114,7 +146,7 @@ GitResult GitRunner::run(const QStringList &args, const QString &cwd,
         waitUntilUnlocked(gitDir, 2000 + kBaseDelayMs * (1 << attempt), 100);
     }
 
-    qDebug() << "git" << args.first() << "took" << timer.elapsed() << "ms";
+    qDebug() << "git" << args.value(0) << "took" << timer.elapsed() << "ms";
     return out;
 }
 
@@ -128,7 +160,7 @@ GitResult GitRunner::runStreaming(const QStringList &args, const QString &cwd,
     waitUntilUnlocked(resolveGitDir(cwd), 1500, 100);
 
     QProcess proc;
-    proc.setProgram("git");
+    proc.setProgram(gitProgram());
     proc.setArguments(args);
     proc.setWorkingDirectory(cwd);
     QProcessEnvironment merged = QProcessEnvironment::systemEnvironment();
@@ -167,6 +199,6 @@ GitResult GitRunner::runStreaming(const QStringList &args, const QString &cwd,
     out.exitCode = proc.exitCode();
     out.stdoutText = QString::fromUtf8(proc.readAllStandardOutput());
     out.stderrText = QString::fromUtf8(stderrBuf);
-    qDebug() << "git" << args.first() << "took" << timer.elapsed() << "ms";
+    qDebug() << "git" << args.value(0) << "took" << timer.elapsed() << "ms";
     return out;
 }
