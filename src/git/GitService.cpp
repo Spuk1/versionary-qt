@@ -266,6 +266,42 @@ void GitService::checkoutRef(const QString &ref) {
         m_git.run({"submodule", "update", "--init", "--recursive"}, m_repo);
 }
 
+void GitService::checkoutWithAutoStash(const QString &ref, const QString &stashMessage) {
+    requireRepo();
+    const QString target = ref.trimmed();
+    if (target.isEmpty())
+        throw GitException("No branch or commit given to check out.");
+    if (!hasUncommittedChanges(m_repo)) {
+        checkoutRef(target);
+        return;
+    }
+    const QString msg = stashMessage.trimmed().isEmpty()
+        ? QString("Versionary auto-stash before checkout %1").arg(target)
+        : stashMessage.trimmed();
+    runOrThrow({"stash", "push", "-u", "-m", msg});
+    try {
+        runOrThrow({"checkout", target});
+    } catch (...) {
+        // Checkout failed after stashing: restore the worktree so the user
+        // ends up where they started, then propagate the checkout error.
+        try {
+            m_git.run({"stash", "pop", "stash@{0}"}, m_repo);
+        } catch (...) {
+        }
+        throw;
+    }
+    if (hasSubmodules())
+        m_git.run({"submodule", "update", "--init", "--recursive"}, m_repo);
+    const GitResult pop = m_git.run({"stash", "pop", "stash@{0}"}, m_repo);
+    if (!pop.ok()) {
+        throw GitException(
+            QString("Switched, but the stashed changes could not be re-applied cleanly.\n"
+                    "Your changes are kept in the stash — resolve the conflicts, "
+                    "then drop the stash.\n\n")
+            + formatGitError(pop));
+    }
+}
+
 bool GitService::currentBranchHasUpstream() {
     requireRepo();
     const GitResult r = m_git.run({"rev-parse", "--verify", "@{u}"}, m_repo);

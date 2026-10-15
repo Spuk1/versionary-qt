@@ -48,6 +48,11 @@ public:
     QMap<QString, int> branchCommitCounts();
     QString aheadBehind(const QString &branch, const QString &remote = "origin");
     void checkoutRef(const QString &ref);
+    // Stash all changes (tracked + untracked), check out ref, re-apply.
+    // Used when switching branches with a dirty worktree: plain checkout
+    // would refuse ("overwritten by checkout"). If re-applying conflicts,
+    // the branch is still switched and the stash is kept — the error says so.
+    void checkoutWithAutoStash(const QString &ref, const QString &stashMessage = {});
     // True when the current branch tracks an upstream branch.
     // Used to offer "--set-upstream" before pushing instead of parsing
     // (possibly localized) git error text.

@@ -1,5 +1,6 @@
 #include "HistoryWidget.h"
 #include "AsyncHelper.h"
+#include "CheckoutPrompt.h"
 #include "DiffViewer.h"
 #include "HistoryDelegate.h"
 #include "RepoManager.h"
@@ -487,19 +488,36 @@ void HistoryWidget::checkoutSelected() {
         emit statusMessage("Select a commit first", true);
         return;
     }
-    if (QMessageBox::question(this, "Checkout Commit",
-                              "Check out " + m_selectedOid.left(7)
-                                  + "? (detached HEAD)")
-        != QMessageBox::Yes)
-        return;
     const QString oid = m_selectedOid;
+    // Dirty worktree: fold the detached-HEAD confirmation into the
+    // stash prompt instead of asking twice.
+    bool useStash = false;
+    if (GitService::hasUncommittedChanges(m_repos->selectedPath())) {
+        const auto choice = CheckoutPrompt::askStashSwitch(this, oid.left(7), true);
+        if (choice == CheckoutPrompt::Choice::Cancel)
+            return;
+        useStash = (choice == CheckoutPrompt::Choice::StashAndSwitch);
+    } else if (QMessageBox::question(this, "Checkout Commit",
+                                     "Check out " + oid.left(7) + "? (detached HEAD)")
+               != QMessageBox::Yes) {
+        return;
+    }
     emit busyChanged(true);
     runBackgroundVoid(
-        this, [this, oid] { m_git->checkoutRef(oid); },
-        [this] {
+        this,
+        [this, oid, useStash] {
+            if (useStash)
+                m_git->checkoutWithAutoStash(
+                    oid, QString("Versionary auto-stash before checkout %1").arg(oid.left(7)));
+            else
+                m_git->checkoutRef(oid);
+        },
+        [this, useStash] {
             emit busyChanged(false);
             m_repos->setHeadState(m_git->headState());
             emit branchesChanged();
+            if (useStash)
+                emit statusMessage("Checked out commit (changes restored)", false);
         },
         [this](const QString &e) {
             emit busyChanged(false);

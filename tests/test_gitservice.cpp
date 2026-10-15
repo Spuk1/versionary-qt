@@ -349,6 +349,108 @@ private slots:
         QVERIFY(!blame.first().author.isEmpty());
     }
 
+    void checkoutWithAutoStashRestoresChanges() {
+        GitRunner git;
+        auto run = [&](const QStringList &args) {
+            const GitResult r = git.run(args, m_work);
+            QVERIFY2(r.ok(), qPrintable(r.stderrText));
+        };
+        run({"checkout", "-qb", "stash-switch-a"});
+        QFile fa(m_work + "/switch.txt");
+        QVERIFY(fa.open(QIODevice::WriteOnly | QIODevice::Text));
+        fa.write("aaa\n");
+        fa.close();
+        QFile fs(m_work + "/shared.txt");
+        QVERIFY(fs.open(QIODevice::WriteOnly | QIODevice::Text));
+        fs.write("base\n");
+        fs.close();
+        run({"add", "."});
+        run({"commit", "-m", "switch a"});
+        run({"checkout", "-qb", "stash-switch-b"});
+        QFile fb(m_work + "/switch.txt");
+        QVERIFY(fb.open(QIODevice::WriteOnly | QIODevice::Text | QIODevice::Truncate));
+        fb.write("bbb\n");
+        fb.close();
+        run({"commit", "-am", "switch b"});
+        // Dirty a file that is identical on both branches (switch.txt itself
+        // differs per branch, so dirtying it could never re-apply cleanly —
+        // that path is covered by checkoutWithAutoStashKeepsStashOnConflict).
+        QFile dirty(m_work + "/shared.txt");
+        QVERIFY(dirty.open(QIODevice::WriteOnly | QIODevice::Text | QIODevice::Truncate));
+        dirty.write("base-local\n");
+        dirty.close();
+        QVERIFY(GitService::hasUncommittedChanges(m_work));
+        // Auto-stash switches and re-applies the local change.
+        m_git->checkoutWithAutoStash("stash-switch-a", "auto-stash test");
+        QCOMPARE(m_git->currentBranch(), QString("stash-switch-a"));
+        QFile check(m_work + "/shared.txt");
+        QVERIFY(check.open(QIODevice::ReadOnly | QIODevice::Text));
+        QCOMPARE(check.readAll(), QByteArray("base-local\n"));
+        check.close();
+        QVERIFY(GitService::hasUncommittedChanges(m_work));
+        QVERIFY(git.run({"stash", "list"}, m_work).stdoutText.trimmed().isEmpty());
+        // Clean tree: plain pass-through switch.
+        run({"checkout", "--", "."});
+        m_git->checkoutWithAutoStash("stash-switch-b");
+        QCOMPARE(m_git->currentBranch(), QString("stash-switch-b"));
+        run({"checkout", "-q", "main"});
+        run({"branch", "-D", "stash-switch-a"});
+        run({"branch", "-D", "stash-switch-b"});
+        QVERIFY(git.run({"status", "--porcelain"}, m_work).stdoutText.trimmed().isEmpty());
+    }
+
+    void checkoutWithAutoStashKeepsStashOnConflict() {
+        GitRunner git;
+        auto run = [&](const QStringList &args) {
+            const GitResult r = git.run(args, m_work);
+            QVERIFY2(r.ok(), qPrintable(r.stderrText));
+        };
+        run({"checkout", "-qb", "stash-clash-a"});
+        QFile fa(m_work + "/clash-switch.txt");
+        QVERIFY(fa.open(QIODevice::WriteOnly | QIODevice::Text));
+        fa.write("aaa\n");
+        fa.close();
+        run({"add", "."});
+        run({"commit", "-m", "clash switch a"});
+        run({"checkout", "-qb", "stash-clash-b"});
+        QFile fb(m_work + "/clash-switch.txt");
+        QVERIFY(fb.open(QIODevice::WriteOnly | QIODevice::Text | QIODevice::Truncate));
+        fb.write("bbb\n");
+        fb.close();
+        run({"commit", "-am", "clash switch b"});
+        // Dirty the same file the target branch changed: plain checkout
+        // refuses, and re-applying after the switch conflicts.
+        QFile dirty(m_work + "/clash-switch.txt");
+        QVERIFY(dirty.open(QIODevice::WriteOnly | QIODevice::Text | QIODevice::Truncate));
+        dirty.write("bbb-local\n");
+        dirty.close();
+        bool threw = false;
+        try {
+            m_git->checkoutRef("stash-clash-a");
+        } catch (const GitException &) {
+            threw = true;
+        }
+        QVERIFY(threw);
+        bool stashThrew = false;
+        try {
+            m_git->checkoutWithAutoStash("stash-clash-a");
+        } catch (const GitException &e) {
+            stashThrew = true;
+            QVERIFY(QString::fromStdString(e.what()).contains("kept in the stash"));
+        }
+        QVERIFY(stashThrew);
+        // Branch still switched, nothing lost: the stash entry is kept.
+        QCOMPARE(m_git->currentBranch(), QString("stash-clash-a"));
+        QVERIFY(!git.run({"stash", "list"}, m_work).stdoutText.trimmed().isEmpty());
+        run({"reset", "--hard", "HEAD"});
+        run({"stash", "drop"});
+        run({"checkout", "-q", "main"});
+        run({"branch", "-D", "stash-clash-a"});
+        run({"branch", "-D", "stash-clash-b"});
+        QVERIFY(git.run({"status", "--porcelain"}, m_work).stdoutText.trimmed().isEmpty());
+        QVERIFY(git.run({"stash", "list"}, m_work).stdoutText.trimmed().isEmpty());
+    }
+
     void repoScopedIdentity() {
         IdentityStore ident;
         QString error;

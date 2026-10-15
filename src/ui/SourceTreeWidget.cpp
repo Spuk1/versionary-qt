@@ -1,5 +1,6 @@
 #include "SourceTreeWidget.h"
 #include "AsyncHelper.h"
+#include "CheckoutPrompt.h"
 #include "CompareDialog.h"
 #include "DiffViewer.h"
 #include "RepoManager.h"
@@ -266,17 +267,47 @@ void SourceTreeWidget::openSubmoduleAsRepo(const QString &relPath) {
 }
 
 void SourceTreeWidget::checkoutBranch(const QString &branch) {
+    if (branch.trimmed().isEmpty())
+        return;
+    // NOTE: compare against the repo head state, not m_currentHead: the
+    // latter only refreshes when the async tree load completes, so rapid
+    // checkouts would see a stale value and wrongly skip the switch.
+    const QString current = m_repos->headState().branch;
+    if (!current.isEmpty() && branch == current)
+        return;
+    // Plain checkout refuses when local changes would be overwritten —
+    // offer to stash, switch, and re-apply instead of just failing.
+    bool useStash = false;
+    if (GitService::hasUncommittedChanges(m_repos->selectedPath())) {
+        const auto choice = CheckoutPrompt::askStashSwitch(this, branch);
+        if (choice == CheckoutPrompt::Choice::Cancel)
+            return;
+        useStash = (choice == CheckoutPrompt::Choice::StashAndSwitch);
+    }
     emit busyChanged(true);
     runBackgroundVoid(
-        this, [this, branch] { m_git->checkoutRef(branch); },
-        [this] {
+        this,
+        [this, branch, useStash] {
+            if (useStash)
+                m_git->checkoutWithAutoStash(
+                    branch, QString("Versionary auto-stash before checkout %1").arg(branch));
+            else
+                m_git->checkoutRef(branch);
+        },
+        [this, branch, useStash] {
             emit busyChanged(false);
             m_repos->setHeadState(m_git->headState());
             emit branchesChanged();
+            emit stashChanged();
             refresh();
+            emit statusMessage(useStash ? "Switched to " + branch + " (changes restored)"
+                                        : "Switched to " + branch,
+                               false);
         },
         [this](const QString &e) {
             emit busyChanged(false);
+            emit stashChanged(); // auto-stash may have kept a stash entry
+            refresh();
             emit statusMessage(e, true);
         });
 }
@@ -365,17 +396,38 @@ void SourceTreeWidget::createPr(const QString &branch) {
 }
 
 void SourceTreeWidget::checkoutCommit(const QString &oid) {
+    if (oid.trimmed().isEmpty())
+        return;
+    bool useStash = false;
+    if (GitService::hasUncommittedChanges(m_repos->selectedPath())) {
+        const auto choice = CheckoutPrompt::askStashSwitch(this, oid.left(7), true);
+        if (choice == CheckoutPrompt::Choice::Cancel)
+            return;
+        useStash = (choice == CheckoutPrompt::Choice::StashAndSwitch);
+    }
     emit busyChanged(true);
     runBackgroundVoid(
-        this, [this, oid] { m_git->checkoutRef(oid); },
-        [this] {
+        this,
+        [this, oid, useStash] {
+            if (useStash)
+                m_git->checkoutWithAutoStash(
+                    oid, QString("Versionary auto-stash before checkout %1").arg(oid.left(7)));
+            else
+                m_git->checkoutRef(oid);
+        },
+        [this, useStash] {
             emit busyChanged(false);
             m_repos->setHeadState(m_git->headState());
             emit branchesChanged();
+            emit stashChanged();
             refresh();
+            if (useStash)
+                emit statusMessage("Checked out commit (changes restored)", false);
         },
         [this](const QString &e) {
             emit busyChanged(false);
+            emit stashChanged();
+            refresh();
             emit statusMessage(e, true);
         });
 }
