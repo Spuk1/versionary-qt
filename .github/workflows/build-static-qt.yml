@@ -1,0 +1,106 @@
+name: Build Static Qt
+
+# Builds the static Qt that the Windows single-file release links against and
+# stores it as an asset on a permanent "qt-static-<version>" release.
+#
+# Why a separate workflow: building Qt from source is a ~15-30 min, once-per-Qt-
+# version job, while a release must be fast and reproducible. Caching it in the
+# Actions cache is not durable (entries are evicted after 7 days idle), so the
+# built tree is stored on a Release instead — releases are permanent.
+#
+# Run this once per Qt version before the first release that uses it. Re-running
+# is a no-op when the asset already exists unless "force" is checked.
+on:
+  workflow_dispatch:
+    inputs:
+      qt_version:
+        description: "Qt version to build statically (keep in sync with QT_VERSION in release.yml)"
+        required: true
+        default: "6.8.3"
+      force:
+        description: "Rebuild and overwrite the asset even if it already exists"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write # create the qt-static-<ver> release + upload the asset
+
+jobs:
+  build-static-qt:
+    runs-on: windows-2022
+    steps:
+      - name: Set up MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Check for an existing asset
+        id: check
+        if: ${{ !inputs.force }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="qt-static-${{ inputs.qt_version }}"
+          if gh release view "$TAG" --repo "${{ github.repository }}" \
+               --json assets --jq '.assets[].name' 2>/dev/null | grep -qE '^qt-static-.*\.7z$'; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Static Qt asset for $TAG already published; nothing to do."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build static Qt (qtbase)
+        if: steps.check.outputs.exists != 'true'
+        shell: pwsh
+        timeout-minutes: 180
+        run: |
+          $ErrorActionPreference = "Stop"
+          $v = "${{ inputs.qt_version }}"
+          $prefix = "C:\Qt\$v-static"
+          git clone --depth 1 --branch "v$v" https://github.com/qt/qtbase.git C:\qtbase-src
+          if ($LASTEXITCODE -ne 0) { throw "git clone failed ($LASTEXITCODE)" }
+          Set-Location C:\qtbase-src
+          # Flags: a self-contained binary per the Windows release requirements.
+          #   -static -static-runtime  no Qt DLLs, no MSVC CRT DLLs
+          #   -opengl desktop          avoid needing opengl32sw.dll
+          #   -no-icu                  avoid ICU DLLs
+          #   -no-openssl              Windows uses Schannel for TLS
+          #   -nomake examples/tests   skip Qt's own test/examples trees
+          & ".\configure.bat" -static -static-runtime -release -opengl desktop `
+            -no-icu -no-openssl -nomake examples -nomake tests -prefix "$prefix"
+          if ($LASTEXITCODE -ne 0) { throw "Qt configure failed ($LASTEXITCODE)" }
+          cmake --build . --parallel
+          if ($LASTEXITCODE -ne 0) { throw "Qt build failed ($LASTEXITCODE)" }
+          cmake --install .
+          if ($LASTEXITCODE -ne 0) { throw "Qt install failed ($LASTEXITCODE)" }
+
+      - name: Archive the install tree
+        if: steps.check.outputs.exists != 'true'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $v = "${{ inputs.qt_version }}"
+          Set-Location C:\Qt
+          # Archive as "<ver>-static\..." so extracting into C:\Qt reproduces
+          # the exact layout the release workflow expects.
+          & 7z a -t7z -mx=7 "C:\qt-static-$v.7z" "$v-static"
+          if ($LASTEXITCODE -ne 0) { throw "7z archive failed ($LASTEXITCODE)" }
+          $size = [math]::Round((Get-Item "C:\qt-static-$v.7z").Length / 1MB, 1)
+          Write-Host "Archive: $size MB"
+
+      - name: Publish the static Qt asset
+        if: steps.check.outputs.exists != 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          V="${{ inputs.qt_version }}"
+          TAG="qt-static-$V"
+          if ! gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            gh release create "$TAG" --repo "${{ github.repository }}" \
+              --title "Static Qt $V (Windows x86_64, MSVC)" \
+              --notes "Static Qt $V built from the qt/qtbase v$V source tree (-static -static-runtime -release -opengl desktop -no-icu -no-openssl -nomake examples -nomake tests). Consumed by .github/workflows/release.yml to produce the single-file Windows Versionary.exe. Keep this asset; delete it only to rebuild."
+          fi
+          gh release upload "$TAG" "C:/qt-static-$V.7z" --repo "${{ github.repository }}" --clobber

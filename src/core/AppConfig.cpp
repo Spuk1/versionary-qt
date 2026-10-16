@@ -48,13 +48,27 @@ QMap<QString, QString> &dotEnvCache() {
     return cache;
 }
 
+// CI compiles with baked placeholder credentials (see
+// .github/workflows/ci.yml) purely so the baked-credential code path is
+// compiled. They must never reach a real request: a developer build that
+// reused the CI cmake cache would otherwise send client_id="dummy" and
+// every provider login would fail (Bitbucket: invalid_requester /
+// failed to retrieve client). Treat placeholders as unset so the .env /
+// remote config take over.
+bool isPlaceholderCredential(const QString &value) {
+    const QString v = value.trimmed().toLower();
+    return v.isEmpty() || v == "dummy" || v == "placeholder" || v == "changeme"
+        || v == "unset" || v == "test";
+}
+
 QString envOrDotEnv(const char *name, const char *baked = "") {
     const QString sys = QProcessEnvironment::systemEnvironment().value(name);
     if (!sys.isEmpty())
         return sys;
     // Packagers (AUR/Flatpak builds) bake credentials at build time so no
-    // secret file has to ship; developers use a local .env instead.
-    if (baked && *baked)
+    // secret file has to ship; developers use a local .env instead. A baked
+    // placeholder (CI "dummy") is ignored so the .env still applies.
+    if (baked && *baked && !isPlaceholderCredential(QString::fromLatin1(baked)))
         return QString::fromLatin1(baked);
     return dotEnvCache().value(name);
 }
@@ -120,7 +134,7 @@ QString envOrDotEnvWithLegacy(const char *name, const char *legacyName, const ch
     v = sysEnv.value(legacyName);
     if (!v.isEmpty())
         return v;
-    if (baked && *baked)
+    if (baked && *baked && !isPlaceholderCredential(QString::fromLatin1(baked)))
         return QString::fromLatin1(baked);
     const auto &cache = dotEnvCache();
     v = cache.value(name);

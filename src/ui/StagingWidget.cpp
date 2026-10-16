@@ -7,6 +7,7 @@
 #include "FileHistoryDialog.h"
 #include "FileListDelegate.h"
 #include "RepoManager.h"
+#include "SpellCheckLineEdit.h"
 #include "git/DiffPatch.h"
 #include "git/GitService.h"
 
@@ -163,8 +164,13 @@ StagingWidget::StagingWidget(GitService *git, RepoManager *repos, QWidget *paren
     m_message = new QComboBox(right);
     m_message->setEditable(true);
     m_message->setInsertPolicy(QComboBox::NoInsert);
+    m_message->setLineEdit(new SpellCheckLineEdit(m_message));
+    // QComboBox::setLineEdit forces NoContextMenu; restore it so right-click
+    // reaches the spelling suggestions.
+    m_message->lineEdit()->setContextMenuPolicy(Qt::DefaultContextMenu);
     m_message->lineEdit()->setPlaceholderText("Commit message (Ctrl+Enter to commit)");
-    m_message->setToolTip("Previous messages are kept in a drop-down history");
+    m_message->setToolTip(
+        "Previous messages are kept in a drop-down history; right-click to fix spelling");
     loadMessageHistory();
     m_amendBox = new QCheckBox("Amend", right);
     m_amendBox->setToolTip("Amend the last commit instead of creating a new one");

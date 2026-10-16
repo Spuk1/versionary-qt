@@ -72,23 +72,57 @@ void ThemeManager::applyTo(QApplication *app) {
         return;
     const bool dark = isDark();
     app->setStyleSheet(stylesheet(dark));
+    // Build a COMPLETE palette rather than patching a few roles of whatever
+    // the platform handed us. On Windows in dark mode the base palette is
+    // near-black (#1c1c1c); roles we did not override (Light/Mid/Dark/
+    // Shadow/AlternateBase/…) leaked through and made Fusion-rendered chrome
+    // look almost black. Setting every role keeps the pinned look identical
+    // across Linux/Windows/macOS. setColor(role, color) writes all groups
+    // (Active/Inactive/Disabled).
     QPalette pal = app->palette();
+    auto set = [&pal](QPalette::ColorRole role, const char *hex) {
+        pal.setColor(role, QColor(hex));
+    };
     if (dark) {
-        pal.setColor(QPalette::Window, QColor("#222831"));
-        pal.setColor(QPalette::WindowText, QColor("#e6e6e6"));
-        pal.setColor(QPalette::Base, QColor("#2c323a"));
-        pal.setColor(QPalette::Text, QColor("#e6e6e6"));
-        pal.setColor(QPalette::Button, QColor("#2b3037"));
-        pal.setColor(QPalette::ButtonText, QColor("#e6e6e6"));
-        pal.setColor(QPalette::Highlight, QColor("#2563eb"));
+        set(QPalette::Window, "#222831");
+        set(QPalette::WindowText, "#e6e6e6");
+        set(QPalette::Base, "#2c323a");
+        set(QPalette::AlternateBase, "#262c34");
+        set(QPalette::Text, "#e6e6e6");
+        set(QPalette::Button, "#2b3037");
+        set(QPalette::ButtonText, "#e6e6e6");
+        set(QPalette::BrightText, "#ffffff");
+        set(QPalette::Highlight, "#2563eb");
+        set(QPalette::HighlightedText, "#ffffff");
+        set(QPalette::ToolTipBase, "#2c323a");
+        set(QPalette::ToolTipText, "#e6e6e6");
+        set(QPalette::PlaceholderText, "#8a93a1");
+        set(QPalette::Link, "#6ea8fe");
+        set(QPalette::Light, "#3a4048");
+        set(QPalette::Midlight, "#343a42");
+        set(QPalette::Mid, "#2b3037");
+        set(QPalette::Dark, "#1b1f25");
+        set(QPalette::Shadow, "#101317");
     } else {
-        pal.setColor(QPalette::Window, QColor("#f4f7fb"));
-        pal.setColor(QPalette::WindowText, QColor("#172133"));
-        pal.setColor(QPalette::Base, QColor("#ffffff"));
-        pal.setColor(QPalette::Text, QColor("#172133"));
-        pal.setColor(QPalette::Button, QColor("#ffffff"));
-        pal.setColor(QPalette::ButtonText, QColor("#222831"));
-        pal.setColor(QPalette::Highlight, QColor("#2563eb"));
+        set(QPalette::Window, "#f4f7fb");
+        set(QPalette::WindowText, "#172133");
+        set(QPalette::Base, "#ffffff");
+        set(QPalette::AlternateBase, "#f1f5fa");
+        set(QPalette::Text, "#172133");
+        set(QPalette::Button, "#ffffff");
+        set(QPalette::ButtonText, "#222831");
+        set(QPalette::BrightText, "#ffffff");
+        set(QPalette::Highlight, "#2563eb");
+        set(QPalette::HighlightedText, "#ffffff");
+        set(QPalette::ToolTipBase, "#ffffff");
+        set(QPalette::ToolTipText, "#172133");
+        set(QPalette::PlaceholderText, "#7b8798");
+        set(QPalette::Link, "#2563eb");
+        set(QPalette::Light, "#ffffff");
+        set(QPalette::Midlight, "#e7edf5");
+        set(QPalette::Mid, "#d0dae8");
+        set(QPalette::Dark, "#a9b5c5");
+        set(QPalette::Shadow, "#8b98a8");
     }
     app->setPalette(pal);
     emit themeChanged(dark);
@@ -156,6 +190,9 @@ QString ThemeManager::stylesheet(bool dark) {
         " border: 1px solid %4; border-bottom: none;"
         " border-top-left-radius: 6px; border-top-right-radius: 6px; }"
         "QTabBar::tab:selected { background: %3; }"
+        "QMenuBar { background: %1; color: %2; }"
+        "QMenuBar::item { background: transparent; padding: 3px 9px; }"
+        "QMenuBar::item:selected { background: %5; }"
         "QToolBar { background: %1; border: none; border-bottom: 1px solid %4;"
         " spacing: 4px; font-size: 14px; }"
         "QToolButton { background: transparent; border: 1px solid transparent;"
@@ -168,7 +205,7 @@ QString ThemeManager::stylesheet(bool dark) {
         "QPushButton.primary:hover { background: #1d4ed8; }"
         "QPushButton.danger { color: #e05555; }"
         "QPushButton.tab { border: 1px solid %4; border-radius: 12px;"
-        " padding: 4px 10px; background: %8; font-weight: 400; font-size: 12px; }"
+        " padding: 4px 10px; background: %8; font-weight: 400; }"
         "QPushButton.tab:hover { background: %5; }"
         "QPushButton.tab:checked { background: %12; border-color: " + tabCheckedBorder + ";"
         " font-weight: 600; }"

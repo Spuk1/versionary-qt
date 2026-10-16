@@ -5,6 +5,8 @@
 #include <QApplication>
 #include <QComboBox>
 #include <QDrag>
+#include <QFont>
+#include <QFontMetrics>
 #include <QHBoxLayout>
 #include <QInputDialog>
 #include <QMenu>
@@ -12,6 +14,14 @@
 #include <QMimeData>
 #include <QMouseEvent>
 #include <QPushButton>
+
+namespace {
+// Pill metrics. The font is pinned in code (not just QSS) so sizing and
+// painting agree on every platform; kTabPadX must match QPushButton.tab's
+// horizontal padding.
+constexpr int kTabFontPx = 12;
+constexpr int kTabPadX = 10;
+} // namespace
 
 const char *RepoTabBar::kDragMime = "application/x-versionary-repotab";
 
@@ -66,6 +76,18 @@ void RepoTabBar::rebuild() {
         btn->setProperty("class", "tab");
         btn->setProperty("repoPos", pos);
         btn->setToolTip(r.path);
+        // Pin the pill font here rather than only via QSS: a stylesheet-only
+        // font-size could be measured at one size and painted at another on
+        // Windows, clipping the leading characters. Reserve width for the
+        // bold selected variant, which is painted after the layout ran.
+        QFont tabFont = btn->font();
+        tabFont.setPixelSize(kTabFontPx);
+        tabFont.setWeight(QFont::Normal);
+        btn->setFont(tabFont);
+        QFont boldFont = tabFont;
+        boldFont.setWeight(QFont::DemiBold);
+        btn->setMinimumWidth(
+            QFontMetrics(boldFont).horizontalAdvance(r.name) + 2 * kTabPadX + 2);
         btn->setCheckable(true);
         btn->setAutoExclusive(true);
         btn->setChecked(repoIdx == m_repos->selectedIndex());

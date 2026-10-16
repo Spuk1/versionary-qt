@@ -1,0 +1,6 @@
+<!DOCTYPE RCC>
+<RCC version="1.0">
+    <qresource prefix="/icons">
+        <file alias="Versionary.png">../packaging/icons/hicolor/256x256/apps/io.github.spuk1.Versionary.png</file>
+    </qresource>
+</RCC>

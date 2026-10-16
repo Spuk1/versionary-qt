@@ -62,4 +62,9 @@ inline QColor diffAddedBg() { return QColor(76, 175, 80, 51); }
 inline QColor diffRemovedBg() { return QColor(244, 67, 54, 51); }
 inline QColor diffSelectedBg() { return QColor(0, 123, 255, 26); }
 
+// Spell-check squiggle under misspelled words in the commit message box.
+inline QColor spellError(const QPalette &pal) {
+    return isDark(pal) ? QColor("#f2555a") : QColor("#c81e1e");
+}
+
 } // namespace ThemeColors

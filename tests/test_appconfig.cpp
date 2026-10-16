@@ -40,6 +40,21 @@ private slots:
         if (!priorNew.isNull())
             qputenv("VERSIONARY_GITHUB_CLIENT_ID", priorNew);
     }
+
+    // CI bakes the literal "dummy" (see .github/workflows/ci.yml) to compile
+    // the baked-credential path; a build that reused that cache must not hand
+    // "dummy" to the OAuth endpoints (Bitbucket then rejects the client).
+    void placeholderBakedCredentialIgnored() {
+        const QByteArray priorNew = qgetenv("VERSIONARY_GITHUB_CLIENT_ID");
+        const QByteArray priorLegacy = qgetenv("GITHUB_CLIENT_ID");
+        qunsetenv("VERSIONARY_GITHUB_CLIENT_ID");
+        qunsetenv("GITHUB_CLIENT_ID");
+        QVERIFY(AppConfig::githubClientId() != QString("dummy"));
+        if (!priorNew.isNull())
+            qputenv("VERSIONARY_GITHUB_CLIENT_ID", priorNew);
+        if (!priorLegacy.isNull())
+            qputenv("GITHUB_CLIENT_ID", priorLegacy);
+    }
 };
 
 QTEST_MAIN(TestAppConfig)

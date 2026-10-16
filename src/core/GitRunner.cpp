@@ -22,6 +22,23 @@ void forceNonInteractiveEnv(QProcessEnvironment &env) {
     env.insert("GIT_EDITOR", "true");
     env.insert("GIT_SEQUENCE_EDITOR", "true");
 }
+
+// A GUI-subsystem app (see CMake WIN32_EXECUTABLE) has no console, so
+// Windows allocates a NEW console window for git.exe (a console program)
+// every time we spawn it — a black window flashing on each status/log
+// refresh. CREATE_NO_WINDOW suppresses that. Defined locally to avoid
+// pulling in <windows.h> (and its min/max macros) into Qt headers.
+#ifdef Q_OS_WIN
+#ifndef CREATE_NO_WINDOW
+#define CREATE_NO_WINDOW 0x08000000
+#endif
+void suppressConsoleWindow(QProcess &proc) {
+    proc.setCreateProcessArgumentsModifier(
+        [](QProcess::CreateProcessArguments *args) { args->flags |= CREATE_NO_WINDOW; });
+}
+#else
+void suppressConsoleWindow(QProcess &) {}
+#endif
 } // namespace
 
 GitRunner::GitRunner(QObject *parent) : QObject(parent) {}
@@ -96,6 +113,7 @@ bool GitRunner::isGitInstalled() {
     QProcess p;
     p.setProgram(gitProgram());
     p.setArguments({"--version"});
+    suppressConsoleWindow(p);
     p.start();
     return p.waitForFinished(10000) && p.exitCode() == 0;
 }
@@ -114,6 +132,7 @@ GitResult GitRunner::run(const QStringList &args, const QString &cwd,
         proc.setProgram(gitProgram());
         proc.setArguments(args);
         proc.setWorkingDirectory(cwd);
+        suppressConsoleWindow(proc);
         QProcessEnvironment merged = QProcessEnvironment::systemEnvironment();
         for (const QString &key : env.keys())
             merged.insert(key, env.value(key));
@@ -163,6 +182,7 @@ GitResult GitRunner::runStreaming(const QStringList &args, const QString &cwd,
     proc.setProgram(gitProgram());
     proc.setArguments(args);
     proc.setWorkingDirectory(cwd);
+    suppressConsoleWindow(proc);
     QProcessEnvironment merged = QProcessEnvironment::systemEnvironment();
     for (const QString &key : env.keys())
         merged.insert(key, env.value(key));

@@ -84,6 +84,7 @@ jobs:
           fetch-depth: 0
 
       - name: Install Qt 6
+        if: matrix.os != 'windows'
         uses: jurplel/install-qt-action@v4
         with:
           version: ${{ env.QT_VERSION }}
@@ -96,7 +97,47 @@ jobs:
           sudo apt-get install -y ninja-build libgl1-mesa-dev libxkbcommon-x11-0
           libxcb-cursor0 file fuse libfuse2
 
+      # ---- Windows: the static Qt is built once by the "Build Static Qt"
+      # workflow and published as an asset on the "qt-static-<ver>" release.
+      # Download it here (~2 min) instead of rebuilding Qt on every release.
+      - name: Set up MSVC
+        if: matrix.os == 'windows'
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Download static Qt
+        if: matrix.os == 'windows'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $v = $env:QT_VERSION
+          $tag = "qt-static-$v"
+          $asset = "qt-static-$v.7z"
+          $dest = "C:\Qt\$v-static"
+          if (!(Test-Path "$dest\lib\cmake\Qt6\Qt6Config.cmake")) {
+            New-Item -ItemType Directory -Force -Path C:\Qt | Out-Null
+            gh release download $tag --repo "${{ github.repository }}" --pattern $asset --dir C:\Qt --clobber
+            if ($LASTEXITCODE -ne 0) {
+              throw "Static Qt $v not found. Run the 'Build Static Qt' workflow first (it publishes release $tag)."
+            }
+            Push-Location C:\Qt
+            & 7z x $asset -y | Out-Null
+            $code = $LASTEXITCODE
+            Pop-Location
+            if ($code -ne 0) { throw "Extracting $asset failed ($code)" }
+            Remove-Item "C:\Qt\$asset" -Force -ErrorAction SilentlyContinue
+          }
+          if (!(Test-Path "$dest\lib\cmake\Qt6\Qt6Config.cmake")) {
+            Get-ChildItem -Recurse C:\Qt | Select-Object -First 40
+            throw "Static Qt install incomplete at $dest"
+          }
+          Write-Host "Using static Qt at $dest"
+
       - name: Configure (OAuth keys baked in from secrets)
+        if: matrix.os != 'windows'
         shell: bash
         run: >
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
@@ -108,14 +149,39 @@ jobs:
           "-DVERSIONARY_GITLAB_CLIENT_ID=${{ secrets.VERSIONARY_GITLAB_CLIENT_ID }}"
           "-DVERSIONARY_GITLAB_CLIENT_SECRET=${{ secrets.VERSIONARY_GITLAB_CLIENT_SECRET }}"
 
+      - name: Configure (Windows, static Qt)
+        if: matrix.os == 'windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          cmake -S . -B build -G Ninja `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded `
+            "-DCMAKE_PREFIX_PATH=C:\Qt\$env:QT_VERSION-static" `
+            -DVERSIONARY_BUILD_TESTS=OFF `
+            "-DVERSIONARY_VERSION=${{ needs.version.outputs.version }}" `
+            "-DVERSIONARY_GITHUB_CLIENT_ID=${{ secrets.VERSIONARY_GITHUB_CLIENT_ID }}" `
+            "-DVERSIONARY_GITHUB_CLIENT_SECRET=${{ secrets.VERSIONARY_GITHUB_CLIENT_SECRET }}" `
+            "-DVERSIONARY_BITBUCKET_CLIENT_ID=${{ secrets.VERSIONARY_BITBUCKET_CLIENT_ID }}" `
+            "-DVERSIONARY_BITBUCKET_CLIENT_SECRET=${{ secrets.VERSIONARY_BITBUCKET_CLIENT_SECRET }}" `
+            "-DVERSIONARY_GITLAB_CLIENT_ID=${{ secrets.VERSIONARY_GITLAB_CLIENT_ID }}" `
+            "-DVERSIONARY_GITLAB_CLIENT_SECRET=${{ secrets.VERSIONARY_GITLAB_CLIENT_SECRET }}"
+          if ($LASTEXITCODE -ne 0) { throw "CMake configure failed ($LASTEXITCODE)" }
+
       - name: Build
+        if: matrix.os != 'windows'
         run: cmake --build build --config Release -j
 
+      - name: Build (Windows, static Qt)
+        if: matrix.os == 'windows'
+        run: cmake --build build --config Release --parallel
+
       - name: Test
+        if: matrix.os != 'windows'
         run: ctest --test-dir build --output-on-failure -C Release
 
       - name: Upload test logs on failure
-        if: failure()
+        if: failure() && matrix.os != 'windows'
         uses: actions/upload-artifact@v4
         with:
           name: test-logs-${{ matrix.os }}
@@ -150,21 +216,18 @@ jobs:
           tar czf "Versionary-${V}-Linux-x86_64.tar.gz" -C build Versionary \
             -C .. packaging/io.github.spuk1.Versionary.desktop README.md
 
-      # ---- Windows: windeployqt + zip -------------------------------------
-      - name: Package (Windows zip)
+      # ---- Windows: true single-file exe (static Qt) ----------------------
+      # No windeployqt / dist folder: Qt, the platform plugin, the MSVC CRT
+      # and the app icon+version info are all inside Versionary.exe.
+      - name: Package (Windows single-file exe)
         if: matrix.os == 'windows'
         shell: pwsh
         run: |
+          $ErrorActionPreference = "Stop"
           $V = "${{ needs.version.outputs.version }}"
-          cmake --install build --prefix dist --config Release
-          if (!(Test-Path dist\bin\Versionary.exe)) { Get-ChildItem -Recurse dist; throw "Versionary.exe missing after install" }
-          # Keep software OpenGL (no --no-opengl-sw): fresh VMs without GPU
-          # drivers need opengl32sw or the app crashes at startup. Bundle the
-          # MSVC redist (--compiler-runtime) so it runs outside dev machines.
-          windeployqt dist\bin\Versionary.exe --release --compiler-runtime --no-translations --verbose 2
-          if (!(Test-Path dist\bin\platforms\qwindows.dll)) { Get-ChildItem -Recurse dist; throw "qwindows.dll missing after windeployqt" }
-          if (!(Test-Path dist\bin\opengl32sw.dll)) { Write-Host "::warning::opengl32sw.dll not bundled; startup may fail on GPU-less machines" }
-          Compress-Archive -Path dist\* -DestinationPath "Versionary-$V-Windows-x86_64.zip"
+          if (!(Test-Path build\Versionary.exe)) { Get-ChildItem -Recurse build; throw "Versionary.exe not built" }
+          Copy-Item build\Versionary.exe "Versionary-$V-Windows-x86_64.exe"
+          Write-Host "Single-file exe: $(((Get-Item "Versionary-$V-Windows-x86_64.exe").Length / 1MB).ToString('0.0')) MB"
 
       # ---- macOS: macdeployqt + DMG ---------------------------------------
       - name: Package (macOS dmg)

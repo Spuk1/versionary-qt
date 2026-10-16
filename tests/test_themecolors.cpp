@@ -1,12 +1,45 @@
 #include "ui/ThemeColors.h"
 #include "ui/ThemeManager.h"
 
+#include <QApplication>
 #include <QtTest/QtTest>
 
 // Guards the exact App.css values so theme regressions are caught.
 class TestThemeColors : public QObject {
     Q_OBJECT
 private slots:
+    void initTestCase() {
+        QCoreApplication::setOrganizationName("VersionaryTest");
+        QCoreApplication::setApplicationName("VersionaryTest");
+    }
+
+    // The palette must be fully specified. On Windows dark mode the platform
+    // palette is near-black; roles we left unset (Dark/AlternateBase/…) leaked
+    // through and made chrome look almost black. Assert the whole scheme is
+    // pinned so a partial palette can't regress silently.
+    void applySetsCompletePalette() {
+        ThemeManager themes;
+        themes.setPreference(ThemeManager::Preference::Dark);
+        themes.applyTo(qApp);
+        const QPalette dark = qApp->palette();
+        QCOMPARE(dark.color(QPalette::Window), QColor("#222831"));
+        QCOMPARE(dark.color(QPalette::Base), QColor("#2c323a"));
+        QCOMPARE(dark.color(QPalette::AlternateBase), QColor("#262c34"));
+        QCOMPARE(dark.color(QPalette::Button), QColor("#2b3037"));
+        QCOMPARE(dark.color(QPalette::Dark), QColor("#1b1f25"));
+        QCOMPARE(dark.color(QPalette::Mid), QColor("#2b3037"));
+        QCOMPARE(dark.color(QPalette::Shadow), QColor("#101317"));
+
+        themes.setPreference(ThemeManager::Preference::Light);
+        themes.applyTo(qApp);
+        const QPalette light = qApp->palette();
+        QCOMPARE(light.color(QPalette::Window), QColor("#f4f7fb"));
+        QCOMPARE(light.color(QPalette::Base), QColor("#ffffff"));
+        QCOMPARE(light.color(QPalette::Dark), QColor("#a9b5c5"));
+
+        themes.setPreference(ThemeManager::Preference::System);
+    }
+
     void darkPaletteValues() {
         QPalette pal;
         pal.setColor(QPalette::Window, QColor("#222831"));

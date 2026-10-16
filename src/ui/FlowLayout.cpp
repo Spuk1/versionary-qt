@@ -63,7 +63,9 @@ int FlowLayout::doLayout(const QRect &rect, bool testOnly) const {
     const int hSpace = m_hSpace >= 0 ? m_hSpace : smartSpacing(QStyle::PM_LayoutHorizontalSpacing);
     const int vSpace = m_vSpace >= 0 ? m_vSpace : smartSpacing(QStyle::PM_LayoutVerticalSpacing);
     for (QLayoutItem *item : m_items) {
-        const QSize hint = item->sizeHint();
+        // Honour a child's minimum size (e.g. repo pills reserve room for
+        // their bold selected text); otherwise text can be clipped.
+        const QSize hint = item->sizeHint().expandedTo(item->minimumSize());
         int nextX = x + hint.width() + hSpace;
         if (nextX - hSpace > area.right() && lineHeight > 0) {
             x = area.x();

@@ -17,7 +17,7 @@ Get the latest build for your platform from the
 | Platform | File | How to run |
 |----------|------|------------|
 | Linux | `Versionary-<ver>-Linux-x86_64.AppImage` | `chmod +x *.AppImage && ./Versionary-*.AppImage` (Qt bundled, no install needed) |
-| Windows | `Versionary-<ver>-Windows-x86_64.zip` | Unzip and run `bin/Versionary.exe` (Qt DLLs included) |
+| Windows | `Versionary-<ver>-Windows-x86_64.exe` | Single self-contained exe — download and run (Qt, CRT and icon embedded; no install, no DLLs) |
 | macOS (Apple Silicon) | `Versionary-<ver>-macOS-arm64.dmg` | Open the DMG, drag to Applications. First launch: right-click → Open (unsigned build) |
 
 Requires `git` on PATH.

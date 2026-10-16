@@ -24,6 +24,29 @@ set(CMAKE_AUTOUIC ON)
 
 find_package(Qt6 REQUIRED COMPONENTS Widgets Network Concurrent Test)
 
+# Windows resource compiler: used to embed the application icon and version
+# info into the released executable (see Versionary.rc.in below).
+if(WIN32)
+    enable_language(RC)
+endif()
+
+# Optional Hunspell: powers spell checking in the commit message box. When the
+# library or headers are missing the feature compiles out (no squiggles or
+# suggestions); the app still builds and runs.
+find_package(PkgConfig QUIET)
+if(PkgConfig_FOUND)
+  pkg_check_modules(HUNSPELL QUIET IMPORTED_TARGET hunspell)
+endif()
+if(NOT HUNSPELL_FOUND)
+  find_path(HUNSPELL_INCLUDE_DIR hunspell/hunspell.hxx)
+  find_library(HUNSPELL_LIBRARY NAMES hunspell)
+  if(HUNSPELL_INCLUDE_DIR AND HUNSPELL_LIBRARY)
+    set(HUNSPELL_FOUND TRUE)
+    set(HUNSPELL_INCLUDE_DIRS ${HUNSPELL_INCLUDE_DIR})
+    set(HUNSPELL_LIBRARIES ${HUNSPELL_LIBRARY})
+  endif()
+endif()
+
 qt_standard_project_setup()
 
 add_library(versionary_core STATIC
@@ -67,6 +90,10 @@ add_library(versionary_core STATIC
     src/models/CommitLogModel.h
     src/models/CommitGraph.cpp
     src/models/CommitGraph.h
+    src/spell/SpellUtils.cpp
+    src/spell/SpellUtils.h
+    src/spell/SpellChecker.cpp
+    src/spell/SpellChecker.h
     src/ui/ThemeManager.cpp
     src/ui/ThemeManager.h
     src/ui/RepoManager.cpp
@@ -87,6 +114,8 @@ add_library(versionary_core STATIC
     src/ui/SourceTreeWidget.h
     src/ui/StagingWidget.cpp
     src/ui/StagingWidget.h
+    src/ui/SpellCheckLineEdit.cpp
+    src/ui/SpellCheckLineEdit.h
     src/ui/SideBySideViewer.cpp
     src/ui/SideBySideViewer.h
     src/ui/FileListDelegate.cpp
@@ -124,6 +153,18 @@ add_library(versionary_core STATIC
 )
 target_link_libraries(versionary_core PUBLIC
     Qt6::Widgets Qt6::Network Qt6::Concurrent)
+if(HUNSPELL_FOUND)
+    target_compile_definitions(versionary_core PUBLIC VERSIONARY_HAVE_HUNSPELL)
+    if(TARGET PkgConfig::HUNSPELL)
+        target_link_libraries(versionary_core PUBLIC PkgConfig::HUNSPELL)
+    else()
+        target_include_directories(versionary_core PRIVATE ${HUNSPELL_INCLUDE_DIRS})
+        target_link_libraries(versionary_core PUBLIC ${HUNSPELL_LIBRARIES})
+    endif()
+    message(STATUS "Versionary: Hunspell spell checking enabled (commit messages)")
+else()
+    message(STATUS "Versionary: Hunspell not found - commit-message spell checking disabled")
+endif()
 target_include_directories(versionary_core PUBLIC src)
 
 qt_add_executable(Versionary src/main.cpp)
@@ -136,6 +177,12 @@ set_target_properties(Versionary PROPERTIES
     MACOSX_BUNDLE_BUNDLE_NAME "Versionary"
     MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}"
     MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
+    # qt_add_executable() does NOT set WIN32_EXECUTABLE (verified against
+    # Qt6ExecutableHelpers: it is only set when the deprecated GUI keyword is
+    # passed). Without it the Windows build is a console-subsystem app, so
+    # double-clicking the released exe pops up a terminal window. GUI
+    # subsystem; harmless no-op on non-Windows/console builds.
+    WIN32_EXECUTABLE TRUE
 )
 # Optional macOS icon: release workflow generates packaging/mac/icon.icns
 # from the hicolor PNGs; use it when present, otherwise build without one.
@@ -146,10 +193,36 @@ if(APPLE AND EXISTS "${CMAKE_SOURCE_DIR}/packaging/mac/icon.icns")
     set_target_properties(Versionary PROPERTIES
         MACOSX_BUNDLE_ICON_FILE "icon.icns")
 endif()
+# Windows icon + version resource. Configured (not used verbatim) so the file
+# version always matches VERSIONARY_VERSION; the .ico is copied beside the
+# generated .rc so rc.exe resolves it without any path escaping.
+if(WIN32)
+    string(REPLACE "." "," VERSIONARY_VERSION_COMMA "${PROJECT_VERSION}")
+    set(VERSIONARY_VERSION_COMMA "${VERSIONARY_VERSION_COMMA},0")
+    configure_file(packaging/Versionary.rc.in
+        ${CMAKE_CURRENT_BINARY_DIR}/Versionary.rc @ONLY)
+    configure_file(packaging/icons/Versionary.ico
+        ${CMAKE_CURRENT_BINARY_DIR}/Versionary.ico COPYONLY)
+    target_sources(Versionary PRIVATE
+        ${CMAKE_CURRENT_BINARY_DIR}/Versionary.rc)
+endif()
+# Window/taskbar icon, loaded at runtime by main.cpp on every platform.
+target_sources(Versionary PRIVATE resources/Versionary.qrc)
 target_link_libraries(Versionary PRIVATE versionary_core)
 
-enable_testing()
-add_subdirectory(tests)
+# A static Qt (the true single-file Windows release) does not get its platform
+# plugin deployed by windeployqt, so link the Windows integration plugin
+# directly; without it the exe aborts at startup with "no Qt platform plugin".
+if(WIN32 AND NOT QT6_IS_SHARED_LIBS_BUILD)
+    qt_import_plugins(Versionary
+        INCLUDE_BY_TYPE platforms Qt6::QWindowsIntegrationPlugin)
+endif()
+
+option(VERSIONARY_BUILD_TESTS "Build the Versionary test suite" ON)
+if(VERSIONARY_BUILD_TESTS)
+    enable_testing()
+    add_subdirectory(tests)
+endif()
 
 include(GNUInstallDirs)
 
